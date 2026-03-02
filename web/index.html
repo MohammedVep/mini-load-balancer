@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Load Balancer | Distributed Systems Demo</title>
+  <meta name="description" content="A production-style mini load balancer with round-robin, least-connections, health checks, failover, and consistent hashing.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="hero">
+    <p class="eyebrow">Distributed Systems Project</p>
+    <h1>Mini Load Balancer</h1>
+    <p class="lede">
+      An AWS-deployable traffic router that demonstrates reliability engineering:
+      strategy-based routing, active health probes, and automatic failover.
+    </p>
+    <div class="hero-actions">
+      <a class="button primary" href="#live">Live Cluster View</a>
+      <a class="button ghost" href="#how-it-works">How It Works</a>
+    </div>
+  </header>
+
+  <main>
+    <section id="recruiter-snapshot" class="panel reveal">
+      <h2>Why This Project Signals Engineering Depth</h2>
+      <div class="metrics-grid">
+        <article>
+          <h3>Traffic Routing</h3>
+          <p>Implements round robin, least connections, and consistent hashing with runtime strategy switching.</p>
+        </article>
+        <article>
+          <h3>Reliability</h3>
+          <p>Active health checks remove failing nodes from rotation and restore them after recovery.</p>
+        </article>
+        <article>
+          <h3>Operational Clarity</h3>
+          <p>Admin APIs expose backend health and connection load for observability and decision-making.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="live" class="panel reveal">
+      <div class="panel-title-row">
+        <h2>Live Control Plane</h2>
+        <button id="refresh-btn" class="button ghost" type="button">Refresh</button>
+      </div>
+      <p class="small-copy">Reads from <code>/admin/backends</code> and <code>/admin/strategy</code>.</p>
+
+      <div class="strategy-switch">
+        <button class="chip" data-strategy="round_robin" type="button">Round Robin</button>
+        <button class="chip" data-strategy="least_connections" type="button">Least Connections</button>
+        <button class="chip" data-strategy="consistent_hash" type="button">Consistent Hashing</button>
+      </div>
+
+      <div class="status-line">
+        <span>Current Strategy:</span>
+        <strong id="strategy-label">Loading...</strong>
+      </div>
+      <div class="status-line">
+        <span>Proxy Endpoint:</span>
+        <code id="proxy-label">/proxy/</code>
+      </div>
+      <div id="backend-grid" class="backend-grid"></div>
+      <p id="status-message" class="small-copy"></p>
+    </section>
+
+    <section id="how-it-works" class="panel reveal">
+      <h2>How Request Routing Works</h2>
+      <ol class="flow">
+        <li>Client request reaches <code>/proxy/*</code>.</li>
+        <li>Balancer chooses backend using active strategy.</li>
+        <li>Health checks keep unhealthy backends out of rotation.</li>
+        <li>Proxy forwards request and updates connection counters.</li>
+        <li>Failures trigger automatic rerouting to healthy nodes.</li>
+      </ol>
+    </section>
+
+    <section id="hash-lab" class="panel reveal">
+      <h2>Consistent Hashing Lab</h2>
+      <p class="small-copy">Use the same key to verify deterministic backend assignment.</p>
+      <div class="hash-controls">
+        <label for="client-key">Client Key</label>
+        <input id="client-key" type="text" value="user-42" placeholder="customer-id">
+        <button id="hash-btn" class="button primary" type="button">Map Key</button>
+      </div>
+      <div id="hash-result" class="hash-result">Result will appear here.</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Built in Go. Ready for containerized AWS deployment.</p>
+  </footer>
+
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

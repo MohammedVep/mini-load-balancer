@@ -1,0 +1,284 @@
+package main
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestRoundRobinSelection(t *testing.T) {
+	lb, err := NewLoadBalancer(
+		[]string{"http://a.internal", "http://b.internal", "http://c.internal"},
+		StrategyRoundRobin,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+
+	var got []string
+	for i := 0; i < 4; i++ {
+		backend := lb.selectBackend(req, nil)
+		if backend == nil {
+			t.Fatal("expected backend, got nil")
+		}
+		got = append(got, backend.URL.Host)
+	}
+
+	want := []string{"a.internal", "b.internal", "c.internal", "a.internal"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected sequence: got %v, want %v", got, want)
+	}
+}
+
+func TestLeastConnectionsSelection(t *testing.T) {
+	lb, err := NewLoadBalancer(
+		[]string{"http://a.internal", "http://b.internal", "http://c.internal"},
+		StrategyLeastConnection,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lb.backends[0].activeConnections.Store(5)
+	lb.backends[1].activeConnections.Store(1)
+	lb.backends[2].activeConnections.Store(3)
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	backend := lb.selectBackend(req, nil)
+	if backend == nil {
+		t.Fatal("expected backend, got nil")
+	}
+	if backend.URL.Host != "b.internal" {
+		t.Fatalf("expected least-loaded backend b.internal, got %s", backend.URL.Host)
+	}
+}
+
+func TestConsistentHashStability(t *testing.T) {
+	lb, err := NewLoadBalancer(
+		[]string{"http://a.internal", "http://b.internal", "http://c.internal"},
+		StrategyConsistentHash,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	req.Header.Set("X-Client-Key", "user-42")
+
+	first := lb.selectBackend(req, nil)
+	if first == nil {
+		t.Fatal("expected backend, got nil")
+	}
+
+	for i := 0; i < 20; i++ {
+		next := lb.selectBackend(req, nil)
+		if next == nil || next.URL.Host != first.URL.Host {
+			t.Fatalf("expected stable backend %s, got %v", first.URL.Host, next)
+		}
+	}
+}
+
+func TestHealthCheckHysteresis(t *testing.T) {
+	var healthy atomic.Bool
+	healthy.Store(true)
+
+	backendServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if healthy.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer backendServer.Close()
+
+	cfg := DefaultLoadBalancerConfig()
+	cfg.HealthFailThreshold = 2
+	cfg.HealthSuccessThreshold = 2
+
+	lb, err := NewLoadBalancerWithConfig([]string{backendServer.URL}, StrategyRoundRobin, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := lb.backends[0]
+
+	healthy.Store(false)
+	lb.runHealthCheckOnce(200*time.Millisecond, "/health")
+	if !backend.IsAlive() {
+		t.Fatal("backend should remain alive after first failed probe")
+	}
+	lb.runHealthCheckOnce(200*time.Millisecond, "/health")
+	if backend.IsAlive() {
+		t.Fatal("backend should be marked dead after second failed probe")
+	}
+
+	healthy.Store(true)
+	lb.runHealthCheckOnce(200*time.Millisecond, "/health")
+	if backend.IsAlive() {
+		t.Fatal("backend should remain dead after first successful probe")
+	}
+	lb.runHealthCheckOnce(200*time.Millisecond, "/health")
+	if !backend.IsAlive() {
+		t.Fatal("backend should be marked alive after second successful probe")
+	}
+}
+
+func TestIdempotentRetryFailover(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	deadURL := dead.URL
+	dead.Close()
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("live"))
+	}))
+	defer live.Close()
+
+	cfg := DefaultLoadBalancerConfig()
+	cfg.MaxRetries = 1
+	cfg.RetryBackoff = 0
+	cfg.CircuitFailureThreshold = 1
+	cfg.CircuitOpenDuration = time.Minute
+
+	lb, err := NewLoadBalancerWithConfig([]string{deadURL, live.URL}, StrategyRoundRobin, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	req.RemoteAddr = "10.0.0.5:1001"
+	rec := httptest.NewRecorder()
+	lb.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected GET retry failover to succeed, got %d", rec.Code)
+	}
+	body, _ := io.ReadAll(rec.Body)
+	if string(body) != "live" {
+		t.Fatalf("expected body live, got %q", string(body))
+	}
+}
+
+func TestNonIdempotentRequestDoesNotRetry(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	deadURL := dead.URL
+	dead.Close()
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("live"))
+	}))
+	defer live.Close()
+
+	cfg := DefaultLoadBalancerConfig()
+	cfg.MaxRetries = 3
+	cfg.RetryBackoff = 0
+
+	lb, err := NewLoadBalancerWithConfig([]string{deadURL, live.URL}, StrategyRoundRobin, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://lb.internal/", strings.NewReader("payload"))
+	req.RemoteAddr = "10.0.0.5:1001"
+	rec := httptest.NewRecorder()
+	lb.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected POST without retry to fail with 502, got %d", rec.Code)
+	}
+}
+
+func TestCircuitOpensAndSkipsBackend(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	deadURL := dead.URL
+	dead.Close()
+
+	cfg := DefaultLoadBalancerConfig()
+	cfg.MaxRetries = 0
+	cfg.CircuitFailureThreshold = 1
+	cfg.CircuitOpenDuration = time.Minute
+	cfg.RetryBackoff = 0
+
+	lb, err := NewLoadBalancerWithConfig([]string{deadURL}, StrategyRoundRobin, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req1 := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	rec1 := httptest.NewRecorder()
+	lb.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusBadGateway {
+		t.Fatalf("expected first request to fail with 502, got %d", rec1.Code)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	rec2 := httptest.NewRecorder()
+	lb.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected second request to skip open circuit and return 503, got %d", rec2.Code)
+	}
+}
+
+func TestDrainRejectsNewRequests(t *testing.T) {
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer live.Close()
+
+	lb, err := NewLoadBalancer([]string{live.URL}, StrategyRoundRobin, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lb.StartDrain()
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	rec := httptest.NewRecorder()
+	lb.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected draining mode to reject new requests with 503, got %d", rec.Code)
+	}
+}
+
+func TestMetricsExposePrometheusFormat(t *testing.T) {
+	m := NewLBMetrics()
+	m.IncInFlight()
+	m.RecordRequest(http.MethodGet, "/proxy/*", http.StatusOK, 35*time.Millisecond)
+	m.RecordBackendSelection("a.internal", string(StrategyRoundRobin))
+	m.RecordUpstreamError("a.internal", "transport")
+	m.RecordCircuitOpen("a.internal")
+	m.RecordRetry()
+	m.RecordFailover()
+	m.DecInFlight()
+
+	rendered := m.RenderPrometheus()
+	for _, token := range []string{
+		"minilb_requests_total",
+		"minilb_request_duration_seconds_bucket",
+		"minilb_backend_selection_total",
+		"minilb_upstream_errors_total",
+		"minilb_circuit_open_total",
+		"minilb_retries_total",
+		"minilb_failovers_total",
+	} {
+		if !strings.Contains(rendered, token) {
+			t.Fatalf("expected metrics output to contain %q", token)
+		}
+	}
+}

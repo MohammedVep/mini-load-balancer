@@ -9,6 +9,8 @@ Production-style Go project that demonstrates core distributed-systems signals:
 - Graceful draining for shutdown/redeploy
 - Operational visibility: admin control-plane endpoints
 - Request IDs, structured JSON logs, and Prometheus-style `/metrics`
+- Optional JWT/Cognito auth, per-IP rate limiting, and trace ID propagation
+- Cost awareness endpoint with request/egress/AI usage estimates
 - Recruiter-facing frontend: explains architecture and exposes live cluster state
 - AWS deployment path: containerized and deployable to App Runner
 
@@ -20,6 +22,8 @@ Production-style Go project that demonstrates core distributed-systems signals:
   Backend pool status (`alive`, `active_connections`) + active strategy.
 - `GET/POST /admin/strategy`:
   Inspect/switch routing strategy.
+- `GET /admin/cost`:
+  Estimated cost dashboard (requests, egress, AI usage/tokens).
 - `GET /proxy/*`:
   Proxied traffic routed to backend pool via selected strategy.
 - `GET /healthz`:
@@ -30,6 +34,8 @@ Production-style Go project that demonstrates core distributed-systems signals:
   AI provider and configuration status.
 - `POST /ai/analyze`:
   AI copilot endpoint for strategy/reliability guidance using live runtime snapshot.
+
+When `AUTH_MODE` is enabled, `/admin/*` and `/metrics` require `Authorization: Bearer <token>`.
 
 ## Local Run
 
@@ -70,6 +76,19 @@ You can configure runtime via env vars (useful in AWS):
 - `AI_MODEL` (default `gpt-4o-mini`)
 - `AI_OPENAI_API_KEY` (required for OpenAI mode)
 - `AI_OPENAI_BASE_URL` (default `https://api.openai.com`)
+- `AUTH_MODE` (`none`, `jwt_hs256`, `cognito_jwt`; default `none`)
+- `AUTH_JWT_HMAC_SECRET` (required if `AUTH_MODE=jwt_hs256`)
+- `AUTH_COGNITO_ISSUER` (required if `AUTH_MODE=cognito_jwt`)
+- `AUTH_COGNITO_AUDIENCE` (optional, recommended for Cognito/JWT audience check)
+- `RATE_LIMIT_ENABLED` (`true`/`false`; default `true`)
+- `RATE_LIMIT_RPS` (default `20`)
+- `RATE_LIMIT_BURST` (default `40`)
+- `HIDE_UPSTREAM_HEADERS` (`true`/`false`; default `true`)
+- `COST_AWARENESS_ENABLED` (`true`/`false`; default `true`)
+- `COST_PER_MILLION_REQUESTS_USD` (default `0.20`)
+- `COST_PER_GB_EGRESS_USD` (default `0.09`)
+- `COST_AI_INPUT_PER_1K_TOKENS_USD` (default `0.00015`)
+- `COST_AI_OUTPUT_PER_1K_TOKENS_USD` (default `0.00060`)
 
 ## Deploy Full AWS-Owned Stack (Recommended)
 

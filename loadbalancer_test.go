@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -280,5 +281,70 @@ func TestMetricsExposePrometheusFormat(t *testing.T) {
 		if !strings.Contains(rendered, token) {
 			t.Fatalf("expected metrics output to contain %q", token)
 		}
+	}
+}
+
+func TestProxyStripsSensitiveUpstreamHeaders(t *testing.T) {
+	t.Setenv("HIDE_UPSTREAM_HEADERS", "true")
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "internal-backend")
+		w.Header().Set("X-Powered-By", "leaky-runtime")
+		w.Header().Set("X-Custom-Header", "ok")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	lb, err := NewLoadBalancer([]string{backend.URL}, StrategyRoundRobin, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/test", nil)
+	req.RemoteAddr = "10.0.0.2:9000"
+	rec := httptest.NewRecorder()
+	lb.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from backend proxy, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Server"); got != "" {
+		t.Fatalf("expected Server header to be stripped, got %q", got)
+	}
+	if got := rec.Header().Get("X-Powered-By"); got != "" {
+		t.Fatalf("expected X-Powered-By header to be stripped, got %q", got)
+	}
+	if got := rec.Header().Get("X-Custom-Header"); got != "ok" {
+		t.Fatalf("expected non-sensitive header to be preserved, got %q", got)
+	}
+}
+
+func TestProxyPropagatesTraceID(t *testing.T) {
+	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+	var gotTrace string
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTrace = r.Header.Get("X-Trace-ID")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	lb, err := NewLoadBalancer([]string{backend.URL}, StrategyRoundRobin, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/test", nil)
+	req = req.WithContext(context.WithValue(req.Context(), traceIDContextKey, traceID))
+	req.RemoteAddr = "10.0.0.2:9000"
+	rec := httptest.NewRecorder()
+	lb.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected proxied response status 200, got %d", rec.Code)
+	}
+	if gotTrace != traceID {
+		t.Fatalf("expected X-Trace-ID %q to reach backend, got %q", traceID, gotTrace)
 	}
 }

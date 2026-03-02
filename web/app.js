@@ -6,6 +6,7 @@
   const backendGrid = document.getElementById("backend-grid");
   const statusMessage = document.getElementById("status-message");
   const proxyLabel = document.getElementById("proxy-label");
+  const costLabel = document.getElementById("cost-label");
   const refreshBtn = document.getElementById("refresh-btn");
   const chips = Array.from(document.querySelectorAll(".chip"));
   const hashBtn = document.getElementById("hash-btn");
@@ -75,8 +76,28 @@
       const healthy = (backendData.backends || []).filter((item) => item.alive).length;
       const total = (backendData.backends || []).length;
       setStatus("Healthy backends: " + healthy + " / " + total + " | Last refresh: " + new Date().toLocaleTimeString(), false);
+      await refreshCost();
     } catch (error) {
       setStatus("Unable to fetch control-plane data: " + error.message, true);
+      await refreshCost();
+    }
+  }
+
+  async function refreshCost() {
+    if (!costLabel) {
+      return;
+    }
+    try {
+      const data = await fetchJSON("/admin/cost");
+      const estimated = Number(data.estimated_cost_usd || 0);
+      const requests = Number(data.http_requests_total || 0);
+      costLabel.textContent = formatUSD(estimated) + " (" + requests + " req)";
+    } catch (error) {
+      if (String(error.message || "").includes("401")) {
+        costLabel.textContent = "auth required";
+        return;
+      }
+      costLabel.textContent = "unavailable";
     }
   }
 
@@ -212,5 +233,15 @@
       table[i] = c >>> 0;
     }
     return table;
+  }
+
+  function formatUSD(value) {
+    if (!Number.isFinite(value)) {
+      return "$0.00";
+    }
+    if (Math.abs(value) >= 1) {
+      return "$" + value.toFixed(2);
+    }
+    return "$" + value.toFixed(6);
   }
 })();

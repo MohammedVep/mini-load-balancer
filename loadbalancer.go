@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -413,6 +414,12 @@ func (lb *LoadBalancer) forwardToBackend(src *http.Request, body []byte, backend
 	if requestID != "" {
 		outReq.Header.Set("X-Request-ID", requestID)
 	}
+	if traceID := TraceIDFromContext(src.Context()); traceID != "" {
+		outReq.Header.Set("X-Trace-ID", traceID)
+		if outReq.Header.Get("traceparent") == "" {
+			outReq.Header.Set("traceparent", traceparentFromTraceID(traceID))
+		}
+	}
 	addForwardHeaders(outReq, src)
 
 	return backend.client.Do(outReq)
@@ -449,6 +456,15 @@ var hopHeaders = map[string]struct{}{
 	"Upgrade":             {},
 }
 
+var sensitiveUpstreamResponseHeaders = map[string]struct{}{
+	"Server":                        {},
+	"Via":                           {},
+	"X-Powered-By":                  {},
+	"X-Aspnet-Version":              {},
+	"X-Aspnetmvc-Version":           {},
+	"X-Envoy-Upstream-Service-Time": {},
+}
+
 func cloneRequestHeader(src http.Header) http.Header {
 	dst := make(http.Header, len(src))
 	for key, values := range src {
@@ -480,8 +496,14 @@ func writeResponse(w http.ResponseWriter, resp *http.Response) {
 
 func copyHeader(dst, src http.Header) {
 	for key, values := range src {
-		if _, skip := hopHeaders[http.CanonicalHeaderKey(key)]; skip {
+		canonical := http.CanonicalHeaderKey(key)
+		if _, skip := hopHeaders[canonical]; skip {
 			continue
+		}
+		if shouldHideUpstreamHeaders() {
+			if _, sensitive := sensitiveUpstreamResponseHeaders[canonical]; sensitive {
+				continue
+			}
 		}
 		for _, value := range values {
 			dst.Add(key, value)
@@ -489,10 +511,19 @@ func copyHeader(dst, src http.Header) {
 	}
 }
 
+func shouldHideUpstreamHeaders() bool {
+	raw := strings.TrimSpace(os.Getenv("HIDE_UPSTREAM_HEADERS"))
+	if raw == "" {
+		return true
+	}
+	return strings.EqualFold(raw, "1") || strings.EqualFold(raw, "true") || strings.EqualFold(raw, "yes")
+}
+
 func (lb *LoadBalancer) logProxyResult(r *http.Request, requestID string, attempts int, statusCode int, backend string, errorCode string) {
 	fields := map[string]any{
 		"event":      "proxy_result",
 		"request_id": requestID,
+		"trace_id":   TraceIDFromContext(r.Context()),
 		"method":     r.Method,
 		"path":       r.URL.Path,
 		"status":     statusCode,

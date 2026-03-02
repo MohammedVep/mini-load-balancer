@@ -41,6 +41,10 @@
           <h3>Operational Clarity</h3>
           <p>Admin APIs expose backend health and connection load for observability and decision-making.</p>
         </article>
+        <article>
+          <h3>Production Controls</h3>
+          <p>Supports JWT/Cognito auth, rate limiting, retries/backoff, trace IDs, panic recovery, and cost awareness.</p>
+        </article>
       </div>
     </section>
 
@@ -64,6 +68,10 @@
       <div class="status-line">
         <span>Proxy Endpoint:</span>
         <code id="proxy-label">/proxy/</code>
+      </div>
+      <div class="status-line">
+        <span>Estimated Cost:</span>
+        <code id="cost-label">loading...</code>
       </div>
       <div id="backend-grid" class="backend-grid"></div>
       <p id="status-message" class="small-copy"></p>

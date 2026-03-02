@@ -113,7 +113,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	authConfig, err := AuthConfigFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	authenticator := NewAuthenticator(authConfig)
+
+	rateLimitConfig := RateLimitConfigFromEnv()
+	rateLimiter := NewRateLimiter(rateLimitConfig)
+
+	costConfig := CostConfigFromEnv()
+	costTracker := NewCostTracker(costConfig)
+
 	aiSystem := NewAISystem(lb, metrics, AIConfigFromEnv())
+	aiSystem.SetCostTracker(costTracker)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -149,6 +163,8 @@ func main() {
 			lb.BackendsHandler(w, r)
 		case r.URL.Path == "/admin/strategy":
 			lb.StrategyHandler(w, r)
+		case r.URL.Path == "/admin/cost":
+			costTracker.Handler(w, r)
 		case r.URL.Path == "/config.js":
 			if r.Method != http.MethodGet {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -204,7 +220,20 @@ func main() {
 		}
 	}
 
-	handler := withRequestID(withAccessLogAndMetrics(appHandler, metrics, routeLabeler))
+	protectedRoute := func(r *http.Request) bool {
+		path := r.URL.Path
+		return strings.HasPrefix(path, "/admin/") || path == "/metrics"
+	}
+
+	var handler http.Handler = appHandler
+	handler = authenticator.Middleware(handler, protectedRoute)
+	handler = withRateLimit(handler, rateLimiter)
+	handler = withAccessLogAndMetrics(handler, metrics, routeLabeler)
+	handler = costTracker.Middleware(handler)
+	handler = withTraceContext(handler)
+	handler = withRequestID(handler)
+	handler = withRecovery(handler)
+
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -240,6 +269,11 @@ func main() {
 		"strategy":                  strategy,
 		"proxy_prefix":              normalizedProxyPrefix,
 		"frontend_enabled":          enableFrontend,
+		"auth_mode":                 authConfig.Mode,
+		"rate_limit_enabled":        rateLimitConfig.Enabled,
+		"rate_limit_rps":            rateLimitConfig.RPS,
+		"rate_limit_burst":          rateLimitConfig.Burst,
+		"cost_awareness_enabled":    costConfig.Enabled,
 		"max_retries":               lbConfig.MaxRetries,
 		"retry_backoff":             lbConfig.RetryBackoff.String(),
 		"upstream_timeout":          lbConfig.UpstreamTimeout.String(),

@@ -33,10 +33,11 @@ func AIConfigFromEnv() AIConfig {
 }
 
 type AISystem struct {
-	lb      *LoadBalancer
-	metrics *LBMetrics
-	config  AIConfig
-	client  *http.Client
+	lb          *LoadBalancer
+	metrics     *LBMetrics
+	config      AIConfig
+	client      *http.Client
+	costTracker *CostTracker
 }
 
 type AISnapshot struct {
@@ -82,6 +83,13 @@ func NewAISystem(lb *LoadBalancer, metrics *LBMetrics, config AIConfig) *AISyste
 			Timeout: config.Timeout,
 		},
 	}
+}
+
+func (ai *AISystem) SetCostTracker(costTracker *CostTracker) {
+	if ai == nil {
+		return
+	}
+	ai.costTracker = costTracker
 }
 
 func (ai *AISystem) ProviderName() string {
@@ -135,12 +143,22 @@ func (ai *AISystem) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 			logJSON(map[string]any{
 				"event":      "ai_fallback",
 				"request_id": RequestIDFromContext(r.Context()),
+				"trace_id":   TraceIDFromContext(r.Context()),
 				"error":      err.Error(),
 			})
 		} else if strings.TrimSpace(openAIAnswer) != "" {
 			answer = strings.TrimSpace(openAIAnswer)
 			provider = "openai"
 		}
+	}
+
+	if ai.costTracker != nil && ai.costTracker.Enabled() && ai.ProviderName() == "openai" {
+		inputTokens := estimateTokenCount(req.Question)
+		outputTokens := 0
+		if provider == "openai" {
+			outputTokens = estimateTokenCount(answer)
+		}
+		ai.costTracker.RecordAIUsage(inputTokens, outputTokens)
 	}
 
 	writeJSONResponse(w, aiAnalyzeResponse{

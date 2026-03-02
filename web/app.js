@@ -1,6 +1,7 @@
 (function () {
-  const cfg = window.__MINILB_CONFIG || { proxyPrefix: "/proxy" };
+  const cfg = window.__MINILB_CONFIG || { proxyPrefix: "/proxy", aiProvider: "heuristic" };
   const proxyPrefix = cfg.proxyPrefix || "/proxy";
+  const configuredAIProvider = cfg.aiProvider || "heuristic";
   const strategyLabel = document.getElementById("strategy-label");
   const backendGrid = document.getElementById("backend-grid");
   const statusMessage = document.getElementById("status-message");
@@ -10,8 +11,14 @@
   const hashBtn = document.getElementById("hash-btn");
   const hashInput = document.getElementById("client-key");
   const hashResult = document.getElementById("hash-result");
+  const aiProviderLabel = document.getElementById("ai-provider-label");
+  const aiQuestion = document.getElementById("ai-question");
+  const aiAskBtn = document.getElementById("ai-ask-btn");
+  const aiAnswer = document.getElementById("ai-answer");
+  const aiPromptButtons = Array.from(document.querySelectorAll(".ai-prompt"));
 
   proxyLabel.textContent = proxyPrefix + "/";
+  aiProviderLabel.textContent = configuredAIProvider;
 
   function setStatus(text, isError) {
     statusMessage.textContent = text;
@@ -87,6 +94,37 @@
     }
   }
 
+  async function refreshAIStatus() {
+    try {
+      const data = await fetchJSON("/ai/status");
+      aiProviderLabel.textContent = String(data.provider || configuredAIProvider);
+    } catch (error) {
+      aiProviderLabel.textContent = configuredAIProvider + " (status unavailable)";
+    }
+  }
+
+  async function askAI(question) {
+    const trimmed = String(question || "").trim();
+    if (!trimmed) {
+      aiAnswer.textContent = "Enter a question first.";
+      return;
+    }
+    aiAnswer.textContent = "Thinking...";
+    try {
+      const data = await fetchJSON("/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: trimmed }),
+      });
+      const provider = data.provider || "heuristic";
+      const suffix = data.used_fallback ? "\n\n(OpenAI unavailable, heuristic fallback used.)" : "";
+      aiAnswer.textContent = "[" + provider + "]\n" + String(data.answer || "No response.") + suffix;
+      aiProviderLabel.textContent = provider;
+    } catch (error) {
+      aiAnswer.textContent = "AI request failed: " + error.message;
+    }
+  }
+
   function runHashLab() {
     const key = (hashInput.value || "").trim();
     if (!key) {
@@ -122,8 +160,24 @@
       runHashLab();
     }
   });
+  aiAskBtn.addEventListener("click", function () {
+    askAI(aiQuestion.value);
+  });
+  aiQuestion.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      askAI(aiQuestion.value);
+    }
+  });
+  aiPromptButtons.forEach((btn) => {
+    btn.addEventListener("click", function () {
+      const prompt = btn.getAttribute("data-prompt") || "";
+      aiQuestion.value = prompt;
+      askAI(prompt);
+    });
+  });
 
   refreshControlPlane();
+  refreshAIStatus();
   window.setInterval(refreshControlPlane, 7000);
 
   function escapeHTML(input) {

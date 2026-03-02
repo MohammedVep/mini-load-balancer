@@ -37,6 +37,15 @@ type LBMetrics struct {
 	circuitOpens     map[string]uint64
 }
 
+type MetricsSnapshot struct {
+	InFlightRequests    int64
+	RetriesTotal        uint64
+	FailoversTotal      uint64
+	RequestsTotal       uint64
+	UpstreamErrorsTotal uint64
+	CircuitOpensTotal   uint64
+}
+
 func NewLBMetrics() *LBMetrics {
 	return &LBMetrics{
 		requests:         make(map[string]uint64),
@@ -165,6 +174,27 @@ func (m *LBMetrics) RenderPrometheus() string {
 	writeLatencyHistogram(&b, latencies)
 
 	return b.String()
+}
+
+func (m *LBMetrics) Snapshot() MetricsSnapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	snapshot := MetricsSnapshot{
+		InFlightRequests: m.inFlight.Load(),
+		RetriesTotal:     m.retriesTotal.Load(),
+		FailoversTotal:   m.failovers.Load(),
+	}
+	for _, value := range m.requests {
+		snapshot.RequestsTotal += value
+	}
+	for _, value := range m.upstreamErrors {
+		snapshot.UpstreamErrorsTotal += value
+	}
+	for _, value := range m.circuitOpens {
+		snapshot.CircuitOpensTotal += value
+	}
+	return snapshot
 }
 
 func writeLatencyHistogram(b *strings.Builder, values map[string]*latencyHistogram) {

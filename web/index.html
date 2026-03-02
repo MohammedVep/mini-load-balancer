@@ -90,6 +90,26 @@
       </div>
       <div id="hash-result" class="hash-result">Result will appear here.</div>
     </section>
+
+    <section id="ai-copilot" class="panel reveal">
+      <h2>AI Copilot</h2>
+      <p class="small-copy">Ask architecture, reliability, or optimization questions based on live cluster state.</p>
+      <div class="status-line">
+        <span>AI Provider:</span>
+        <code id="ai-provider-label">loading...</code>
+      </div>
+      <div class="ai-actions">
+        <button class="chip ai-prompt" data-prompt="What routing strategy should I use right now?" type="button">Strategy Advice</button>
+        <button class="chip ai-prompt" data-prompt="How do I improve reliability for this load balancer?" type="button">Reliability Plan</button>
+        <button class="chip ai-prompt" data-prompt="Give me a recruiter-ready explanation of this system." type="button">Recruiter Pitch</button>
+      </div>
+      <div class="hash-controls">
+        <label for="ai-question">Question</label>
+        <textarea id="ai-question" rows="4" placeholder="Ask the AI copilot about strategy, resilience, scaling, or interview narrative."></textarea>
+        <button id="ai-ask-btn" class="button primary" type="button">Ask AI</button>
+      </div>
+      <div id="ai-answer" class="hash-result">AI response will appear here.</div>
+    </section>
   </main>
 
   <footer class="footer">

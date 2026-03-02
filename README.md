@@ -26,6 +26,10 @@ Production-style Go project that demonstrates core distributed-systems signals:
   Service health endpoint (used for deployment health checks).
 - `GET /metrics`:
   Prometheus scrape endpoint (latency, error, retry, failover, backend-selection metrics).
+- `GET /ai/status`:
+  AI provider and configuration status.
+- `POST /ai/analyze`:
+  AI copilot endpoint for strategy/reliability guidance using live runtime snapshot.
 
 ## Local Run
 
@@ -61,6 +65,11 @@ You can configure runtime via env vars (useful in AWS):
 - `HEALTH_SUCCESS_THRESHOLD` (default `2`)
 - `DRAIN_DELAY` (default `5s`)
 - `SHUTDOWN_TIMEOUT` (default `15s`)
+- `AI_PROVIDER` (`heuristic`, `openai`, `auto`; default `heuristic`)
+- `AI_TIMEOUT` (default `12s`)
+- `AI_MODEL` (default `gpt-4o-mini`)
+- `AI_OPENAI_API_KEY` (required for OpenAI mode)
+- `AI_OPENAI_BASE_URL` (default `https://api.openai.com`)
 
 ## Deploy Full AWS-Owned Stack (Recommended)
 

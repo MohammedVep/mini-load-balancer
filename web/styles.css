@@ -248,11 +248,19 @@ code {
   max-width: 440px;
 }
 
+.ai-actions {
+  margin: 0.85rem 0;
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 label {
   font-weight: 600;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
@@ -260,6 +268,11 @@ input {
   border-radius: 10px;
   padding: 0.72rem;
   font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 96px;
 }
 
 .hash-result {

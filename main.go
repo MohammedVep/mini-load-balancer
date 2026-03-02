@@ -113,6 +113,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	aiSystem := NewAISystem(lb, metrics, AIConfigFromEnv())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -140,6 +141,10 @@ func main() {
 			w.Write([]byte(`{"status":"ok"}`))
 		case r.URL.Path == "/metrics":
 			metrics.Handler(w, r)
+		case r.URL.Path == "/ai/status":
+			aiSystem.StatusHandler(w, r)
+		case r.URL.Path == "/ai/analyze":
+			aiSystem.AnalyzeHandler(w, r)
 		case r.URL.Path == "/admin/backends":
 			lb.BackendsHandler(w, r)
 		case r.URL.Path == "/admin/strategy":
@@ -150,7 +155,7 @@ func main() {
 				return
 			}
 			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-			w.Write([]byte("window.__MINILB_CONFIG = { proxyPrefix: '" + normalizedProxyPrefix + "' };"))
+			w.Write([]byte("window.__MINILB_CONFIG = { proxyPrefix: '" + normalizedProxyPrefix + "', aiProvider: '" + aiSystem.ProviderName() + "' };"))
 		case r.URL.Path == normalizedProxyPrefix:
 			http.Redirect(w, r, normalizedProxyPrefix+"/", http.StatusPermanentRedirect)
 		case strings.HasPrefix(r.URL.Path, normalizedProxyPrefix+"/"):
@@ -186,6 +191,8 @@ func main() {
 			return "/healthz"
 		case path == "/metrics":
 			return "/metrics"
+		case strings.HasPrefix(path, "/ai/"):
+			return "/ai/*"
 		case strings.HasPrefix(path, "/admin/"):
 			return "/admin/*"
 		case path == normalizedProxyPrefix || strings.HasPrefix(path, normalizedProxyPrefix+"/"):

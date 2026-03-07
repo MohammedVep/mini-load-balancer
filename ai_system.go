@@ -237,10 +237,12 @@ func (ai *AISystem) strategyGuidance(s AISnapshot) string {
 	switch s.Strategy {
 	case string(StrategyLeastConnection):
 		return "- Strategy guidance: least-connections is good for uneven backend response times and bursty traffic."
+	case string(StrategyWeighted):
+		return "- Strategy guidance: weighted routing is best when backends have different capacity; assign higher weights to stronger nodes."
 	case string(StrategyConsistentHash):
 		return "- Strategy guidance: consistent-hashing is best when request affinity or cache locality matters."
 	default:
-		return "- Strategy guidance: round-robin is simple and fair when backends are homogeneous."
+		return "- Strategy guidance: round-robin is simple and fair for homogeneous pools; use weighted when backend capacity differs."
 	}
 }
 

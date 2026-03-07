@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mini Load Balancer | Distributed Systems Demo</title>
-  <meta name="description" content="A production-style mini load balancer with round-robin, least-connections, health checks, failover, and consistent hashing.">
+  <meta name="description" content="A production-style mini load balancer with round-robin, least-connections, weighted routing, consistent hashing, health checks, and failover.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -31,7 +31,7 @@
       <div class="metrics-grid">
         <article>
           <h3>Traffic Routing</h3>
-          <p>Implements round robin, least connections, and consistent hashing with runtime strategy switching.</p>
+          <p>Implements round robin, least connections, weighted routing, and consistent hashing with runtime strategy switching.</p>
         </article>
         <article>
           <h3>Reliability</h3>
@@ -58,6 +58,7 @@
       <div class="strategy-switch">
         <button class="chip" data-strategy="round_robin" type="button">Round Robin</button>
         <button class="chip" data-strategy="least_connections" type="button">Least Connections</button>
+        <button class="chip" data-strategy="weighted" type="button">Weighted Routing</button>
         <button class="chip" data-strategy="consistent_hash" type="button">Consistent Hashing</button>
       </div>
 
@@ -88,15 +89,27 @@
       </ol>
     </section>
 
-    <section id="hash-lab" class="panel reveal">
-      <h2>Consistent Hashing Lab</h2>
-      <p class="small-copy">Use the same key to verify deterministic backend assignment.</p>
-      <div class="hash-controls">
-        <label for="client-key">Client Key</label>
-        <input id="client-key" type="text" value="user-42" placeholder="customer-id">
-        <button id="hash-btn" class="button primary" type="button">Map Key</button>
+    <section id="routing-tradeoffs" class="panel reveal">
+      <h2>Routing Trade-offs</h2>
+      <div class="metrics-grid">
+        <article>
+          <h3>Round Robin</h3>
+          <p>Simple and fair when all nodes are similar in capacity and latency profile.</p>
+        </article>
+        <article>
+          <h3>Least Connections</h3>
+          <p>Adapts to uneven request duration by sending new traffic to less-busy nodes.</p>
+        </article>
+        <article>
+          <h3>Weighted Routing</h3>
+          <p>Distributes traffic by node capacity so stronger backends handle a larger share.</p>
+        </article>
+        <article>
+          <h3>Consistent Hashing</h3>
+          <p>Best for affinity and cache locality because key-to-node mapping stays stable.</p>
+        </article>
       </div>
-      <div id="hash-result" class="hash-result">Result will appear here.</div>
+      <p class="small-copy">Health checks and failover apply across all strategies to keep unhealthy nodes out of rotation.</p>
     </section>
 
     <section id="ai-copilot" class="panel reveal">

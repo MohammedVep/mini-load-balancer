@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -11,6 +14,49 @@ import (
 	"testing"
 	"time"
 )
+
+func TestParseStrategyAcceptsWeighted(t *testing.T) {
+	strategy, err := ParseStrategy("weighted")
+	if err != nil {
+		t.Fatalf("expected weighted strategy to parse: %v", err)
+	}
+	if strategy != StrategyWeighted {
+		t.Fatalf("expected %q, got %q", StrategyWeighted, strategy)
+	}
+}
+
+func TestParseStrategyErrorMentionsWeighted(t *testing.T) {
+	_, err := ParseStrategy("invalid")
+	if err == nil {
+		t.Fatal("expected parse strategy to fail")
+	}
+	if !strings.Contains(err.Error(), "weighted") {
+		t.Fatalf("expected error to mention weighted, got %q", err.Error())
+	}
+}
+
+func TestNewLoadBalancerWithConfigRejectsInvalidWeights(t *testing.T) {
+	cfg := DefaultLoadBalancerConfig()
+	cfg.BackendWeights = []int{1}
+	if _, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	); err == nil {
+		t.Fatal("expected backend weights count mismatch error")
+	}
+
+	cfg.BackendWeights = []int{1, 0}
+	if _, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	); err == nil {
+		t.Fatal("expected non-positive backend weight error")
+	}
+}
 
 func TestRoundRobinSelection(t *testing.T) {
 	lb, err := NewLoadBalancer(
@@ -37,6 +83,95 @@ func TestRoundRobinSelection(t *testing.T) {
 	want := []string{"a.internal", "b.internal", "c.internal", "a.internal"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected sequence: got %v, want %v", got, want)
+	}
+}
+
+func TestWeightedSelectionDistribution(t *testing.T) {
+	cfg := DefaultLoadBalancerConfig()
+	cfg.BackendWeights = []int{1, 3, 6}
+
+	lb, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal", "http://c.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lb.rand = rand.New(rand.NewSource(12345))
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	counts := map[string]int{}
+	const total = 20000
+	for i := 0; i < total; i++ {
+		backend := lb.selectBackend(req, nil)
+		if backend == nil {
+			t.Fatal("expected backend, got nil")
+		}
+		counts[backend.URL.Host]++
+	}
+
+	expected := map[string]float64{
+		"a.internal": 0.10,
+		"b.internal": 0.30,
+		"c.internal": 0.60,
+	}
+	for host, ratio := range expected {
+		got := float64(counts[host]) / total
+		if math.Abs(got-ratio) > 0.03 {
+			t.Fatalf("unexpected ratio for %s: got %.4f want %.4f +/- 0.03", host, got, ratio)
+		}
+	}
+}
+
+func TestWeightedSelectionSkipsExcludedAndUnhealthy(t *testing.T) {
+	cfg := DefaultLoadBalancerConfig()
+	cfg.BackendWeights = []int{8, 1}
+
+	lb, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lb.rand = rand.New(rand.NewSource(1))
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	selected := lb.selectBackend(req, map[*Backend]struct{}{lb.backends[0]: struct{}{}})
+	if selected == nil || selected.URL.Host != "b.internal" {
+		t.Fatalf("expected excluded backend to be skipped, got %v", selected)
+	}
+
+	lb.backends[1].SetAlive(false)
+	selected = lb.selectBackend(req, nil)
+	if selected == nil || selected.URL.Host != "a.internal" {
+		t.Fatalf("expected unhealthy backend to be skipped, got %v", selected)
+	}
+}
+
+func TestWeightedSelectionReturnsNilWhenNoEligibleWeightedBackends(t *testing.T) {
+	cfg := DefaultLoadBalancerConfig()
+	cfg.BackendWeights = []int{1, 2}
+
+	lb, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lb.backends[0].SetAlive(false)
+	lb.backends[1].SetAlive(false)
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/", nil)
+	if selected := lb.selectBackend(req, nil); selected != nil {
+		t.Fatalf("expected nil backend when none are eligible, got %v", selected.URL.Host)
 	}
 }
 
@@ -346,5 +481,66 @@ func TestProxyPropagatesTraceID(t *testing.T) {
 	}
 	if gotTrace != traceID {
 		t.Fatalf("expected X-Trace-ID %q to reach backend, got %q", traceID, gotTrace)
+	}
+}
+
+func TestStrategyHandlerSwitchesToWeighted(t *testing.T) {
+	lb, err := NewLoadBalancer(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyRoundRobin,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://lb.internal/admin/strategy", strings.NewReader(`{"name":"weighted"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	lb.StrategyHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected strategy switch to succeed, got %d", rec.Code)
+	}
+	if lb.Strategy() != StrategyWeighted {
+		t.Fatalf("expected strategy %q, got %q", StrategyWeighted, lb.Strategy())
+	}
+}
+
+func TestBackendsHandlerIncludesWeight(t *testing.T) {
+	cfg := DefaultLoadBalancerConfig()
+	cfg.BackendWeights = []int{2, 5}
+
+	lb, err := NewLoadBalancerWithConfig(
+		[]string{"http://a.internal", "http://b.internal"},
+		StrategyWeighted,
+		cfg,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://lb.internal/admin/backends", nil)
+	rec := httptest.NewRecorder()
+	lb.BackendsHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var payload struct {
+		Backends []struct {
+			URL    string `json:"url"`
+			Weight int    `json:"weight"`
+		} `json:"backends"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Backends) != 2 {
+		t.Fatalf("expected 2 backends, got %d", len(payload.Backends))
+	}
+	if payload.Backends[0].Weight != 2 || payload.Backends[1].Weight != 5 {
+		t.Fatalf("unexpected weights in response: %+v", payload.Backends)
 	}
 }

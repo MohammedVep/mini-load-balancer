@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ func main() {
 		modeRaw        string
 		backendName    string
 		backendList    string
+		backendWeights string
 		strategyRaw    string
 		healthPath     string
 		healthInterval time.Duration
@@ -43,7 +45,8 @@ func main() {
 	flag.StringVar(&modeRaw, "mode", "", "runtime mode: load_balancer | backend_demo")
 	flag.StringVar(&backendName, "backend-name", "", "backend identifier when mode=backend_demo")
 	flag.StringVar(&backendList, "backends", "", "comma-separated backend URLs (or set BACKENDS env var)")
-	flag.StringVar(&strategyRaw, "strategy", "", "routing strategy: round_robin | least_connections | consistent_hash")
+	flag.StringVar(&backendWeights, "backend-weights", "", "comma-separated backend weights aligned to -backends order")
+	flag.StringVar(&strategyRaw, "strategy", "", "routing strategy: round_robin | least_connections | consistent_hash | weighted")
 	flag.StringVar(&healthPath, "health-path", "", "health check path")
 	flag.DurationVar(&healthInterval, "health-interval", 5*time.Second, "health check interval")
 	flag.DurationVar(&healthTimeout, "health-timeout", 2*time.Second, "health check timeout")
@@ -65,6 +68,7 @@ func main() {
 	modeRaw = firstNonEmpty(strings.TrimSpace(modeRaw), strings.TrimSpace(os.Getenv("MODE")), "load_balancer")
 	backendName = firstNonEmpty(strings.TrimSpace(backendName), strings.TrimSpace(os.Getenv("BACKEND_NAME")), "backend-demo")
 	backendList = firstNonEmpty(strings.TrimSpace(backendList), strings.TrimSpace(os.Getenv("BACKENDS")))
+	backendWeights = firstNonEmpty(strings.TrimSpace(backendWeights), strings.TrimSpace(os.Getenv("BACKEND_WEIGHTS")))
 	strategyRaw = firstNonEmpty(strings.TrimSpace(strategyRaw), strings.TrimSpace(os.Getenv("STRATEGY")), string(StrategyRoundRobin))
 	healthPath = firstNonEmpty(strings.TrimSpace(healthPath), strings.TrimSpace(os.Getenv("HEALTH_PATH")), "/health")
 	proxyPrefix = firstNonEmpty(strings.TrimSpace(proxyPrefix), strings.TrimSpace(os.Getenv("PROXY_PREFIX")), "/proxy")
@@ -109,6 +113,11 @@ func main() {
 
 	metrics := NewLBMetrics()
 	backends := splitCSV(backendList)
+	weights, err := parseBackendWeights(backendWeights, len(backends))
+	if err != nil {
+		log.Fatal(err)
+	}
+	lbConfig.BackendWeights = weights
 	lb, err := NewLoadBalancerWithConfig(backends, strategy, lbConfig, metrics)
 	if err != nil {
 		log.Fatal(err)
@@ -281,6 +290,7 @@ func main() {
 		"circuit_open_duration":     lbConfig.CircuitOpenDuration.String(),
 		"health_fail_threshold":     lbConfig.HealthFailThreshold,
 		"health_success_threshold":  lbConfig.HealthSuccessThreshold,
+		"backend_weights":           lbConfig.BackendWeights,
 		"drain_delay":               drainDelay.String(),
 		"shutdown_timeout":          shutdownTimeout.String(),
 	})
@@ -300,6 +310,31 @@ func splitCSV(raw string) []string {
 		}
 	}
 	return out
+}
+
+func parseBackendWeights(raw string, backendCount int) ([]int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	parts := splitCSV(raw)
+	if len(parts) != backendCount {
+		return nil, fmt.Errorf("backend weights count (%d) must match backend count (%d)", len(parts), backendCount)
+	}
+
+	weights := make([]int, 0, len(parts))
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid backend weight at index %d: %q", i, part)
+		}
+		if value < 1 {
+			return nil, fmt.Errorf("backend weight at index %d must be >= 1", i)
+		}
+		weights = append(weights, value)
+	}
+	return weights, nil
 }
 
 func firstNonEmpty(values ...string) string {

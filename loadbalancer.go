@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ const (
 	StrategyRoundRobin      Strategy = "round_robin"
 	StrategyLeastConnection Strategy = "least_connections"
 	StrategyConsistentHash  Strategy = "consistent_hash"
+	StrategyWeighted        Strategy = "weighted"
 )
 
 func ParseStrategy(raw string) (Strategy, error) {
@@ -34,13 +36,16 @@ func ParseStrategy(raw string) (Strategy, error) {
 		return StrategyLeastConnection, nil
 	case StrategyConsistentHash:
 		return StrategyConsistentHash, nil
+	case StrategyWeighted:
+		return StrategyWeighted, nil
 	default:
-		return "", errors.New("invalid strategy: use round_robin, least_connections, or consistent_hash")
+		return "", errors.New("invalid strategy: use round_robin, least_connections, consistent_hash, or weighted")
 	}
 }
 
 type LoadBalancerConfig struct {
 	HashReplicas            int
+	BackendWeights          []int
 	MaxRetries              int
 	RetryBackoff            time.Duration
 	UpstreamTimeout         time.Duration
@@ -93,6 +98,7 @@ func normalizeConfig(cfg *LoadBalancerConfig) {
 
 type Backend struct {
 	URL *url.URL
+	Weight int
 
 	client *http.Client
 
@@ -175,6 +181,8 @@ type LoadBalancer struct {
 
 	strategy atomic.Value // Strategy
 	rrCursor atomic.Uint64
+	randMu   sync.Mutex
+	rand     *rand.Rand
 
 	ringMu   sync.RWMutex
 	hashRing *HashRing
@@ -194,17 +202,30 @@ func NewLoadBalancerWithConfig(rawBackends []string, strategy Strategy, config L
 	if len(rawBackends) == 0 {
 		return nil, errors.New("at least one backend is required")
 	}
+	if len(config.BackendWeights) > 0 && len(config.BackendWeights) != len(rawBackends) {
+		return nil, fmt.Errorf("backend weights count (%d) must match backend count (%d)", len(config.BackendWeights), len(rawBackends))
+	}
+	for i, weight := range config.BackendWeights {
+		if weight < 1 {
+			return nil, fmt.Errorf("backend weight at index %d must be >= 1", i)
+		}
+	}
 	normalizeConfig(&config)
 
 	lb := &LoadBalancer{
 		backends: make([]*Backend, 0, len(rawBackends)),
 		config:   config,
 		metrics:  metrics,
+		rand:     rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 	lb.strategy.Store(strategy)
 
-	for _, raw := range rawBackends {
-		backend, err := newBackend(raw, config)
+	for i, raw := range rawBackends {
+		weight := 1
+		if i < len(config.BackendWeights) && config.BackendWeights[i] > 0 {
+			weight = config.BackendWeights[i]
+		}
+		backend, err := newBackend(raw, config, weight)
 		if err != nil {
 			return nil, err
 		}
@@ -215,7 +236,7 @@ func NewLoadBalancerWithConfig(rawBackends []string, strategy Strategy, config L
 	return lb, nil
 }
 
-func newBackend(rawURL string, cfg LoadBalancerConfig) (*Backend, error) {
+func newBackend(rawURL string, cfg LoadBalancerConfig, weight int) (*Backend, error) {
 	targetURL, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return nil, err
@@ -225,7 +246,8 @@ func newBackend(rawURL string, cfg LoadBalancerConfig) (*Backend, error) {
 	}
 
 	backend := &Backend{
-		URL: targetURL,
+		URL:    targetURL,
+		Weight: weight,
 		client: &http.Client{
 			Timeout: cfg.UpstreamTimeout,
 		},
@@ -557,6 +579,8 @@ func (lb *LoadBalancer) selectBackend(r *http.Request, excluded map[*Backend]str
 			return backend
 		}
 		return lb.selectRoundRobin(excluded)
+	case StrategyWeighted:
+		return lb.selectWeighted(excluded)
 	default:
 		return lb.selectRoundRobin(excluded)
 	}
@@ -619,6 +643,44 @@ func (lb *LoadBalancer) selectConsistentHash(r *http.Request, excluded map[*Back
 		localExcluded[backend] = struct{}{}
 	}
 	return nil
+}
+
+func (lb *LoadBalancer) selectWeighted(excluded map[*Backend]struct{}) *Backend {
+	now := time.Now()
+	totalWeight := 0
+	eligible := make([]*Backend, 0, len(lb.backends))
+	for _, backend := range lb.backends {
+		if !backend.IsAlive() || backend.isCircuitOpen(now) || isExcluded(backend, excluded) || backend.Weight <= 0 {
+			continue
+		}
+		eligible = append(eligible, backend)
+		totalWeight += backend.Weight
+	}
+	if totalWeight <= 0 {
+		return nil
+	}
+
+	roll := lb.randomIntn(totalWeight)
+	running := 0
+	for _, backend := range eligible {
+		running += backend.Weight
+		if roll < running {
+			return backend
+		}
+	}
+	return eligible[len(eligible)-1]
+}
+
+func (lb *LoadBalancer) randomIntn(max int) int {
+	if max <= 1 {
+		return 0
+	}
+	lb.randMu.Lock()
+	defer lb.randMu.Unlock()
+	if lb.rand == nil {
+		lb.rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	return lb.rand.Intn(max)
 }
 
 func cloneExcluded(excluded map[*Backend]struct{}) map[*Backend]struct{} {
@@ -718,6 +780,7 @@ func (lb *LoadBalancer) BackendsHandler(w http.ResponseWriter, r *http.Request) 
 	type backendStatus struct {
 		URL                 string `json:"url"`
 		Alive               bool   `json:"alive"`
+		Weight              int    `json:"weight"`
 		ActiveConnections   int64  `json:"active_connections"`
 		CircuitOpen         bool   `json:"circuit_open"`
 		CircuitOpenUntilUTC string `json:"circuit_open_until_utc,omitempty"`
@@ -730,6 +793,7 @@ func (lb *LoadBalancer) BackendsHandler(w http.ResponseWriter, r *http.Request) 
 		item := backendStatus{
 			URL:               backend.URL.String(),
 			Alive:             backend.IsAlive(),
+			Weight:            backend.Weight,
 			ActiveConnections: backend.activeConnections.Load(),
 			CircuitOpen:       backend.isCircuitOpen(now),
 		}

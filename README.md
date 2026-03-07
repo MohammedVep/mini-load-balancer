@@ -2,7 +2,7 @@
 
 Production-style Go project that demonstrates core distributed-systems signals:
 
-- Traffic routing strategies: round robin, least connections, consistent hashing
+- Traffic routing strategies: round robin, least connections, weighted routing, consistent hashing
 - Reliability mechanics: active health checks + automatic failover + circuit breaker
 - Bounded idempotent retries with backend failover
 - Health-check hysteresis (`health_fail_threshold`, `health_success_threshold`) to avoid flapping
@@ -19,7 +19,7 @@ Production-style Go project that demonstrates core distributed-systems signals:
 - `GET /`:
   Recruiter-facing frontend with project narrative and live status dashboard.
 - `GET /admin/backends`:
-  Backend pool status (`alive`, `active_connections`) + active strategy.
+  Backend pool status (`alive`, `weight`, `active_connections`) + active strategy.
 - `GET/POST /admin/strategy`:
   Inspect/switch routing strategy.
 - `GET /admin/cost`:
@@ -42,6 +42,7 @@ When `AUTH_MODE` is enabled, `/admin/*` and `/metrics` require `Authorization: B
 ```bash
 go run . \
   -backends http://localhost:9001,http://localhost:9002,http://localhost:9003 \
+  -backend-weights 1,2,3 \
   -strategy round_robin
 ```
 
@@ -56,7 +57,8 @@ Then open:
 You can configure runtime via env vars (useful in AWS):
 
 - `BACKENDS` (required if `-backends` not passed)
-- `STRATEGY` (`round_robin`, `least_connections`, `consistent_hash`)
+- `STRATEGY` (`round_robin`, `least_connections`, `weighted`, `consistent_hash`)
+- `BACKEND_WEIGHTS` (comma-separated ints aligned to `BACKENDS`, each `>= 1`)
 - `PROXY_PREFIX` (default `/proxy`)
 - `HEALTH_PATH` (default `/health`)
 - `ENABLE_FRONTEND` (`true`/`false`)
@@ -173,6 +175,14 @@ This sets up:
 3. Call out health checks/failover as reliability primitives.
 4. Mention consistent hashing for sticky distribution and reduced reshuffling.
 5. Show `/admin/backends` as operational observability evidence.
+
+## Algorithm Trade-offs
+
+- `round_robin`: best when backends are homogeneous and you want simple fair distribution.
+- `least_connections`: best when request duration varies and you want adaptive balancing.
+- `weighted`: best when backend capacity differs and stronger nodes should take more traffic.
+- `consistent_hash`: best for request affinity/cache locality and reduced reshuffling.
+- `health checks + failover`: reliability layer used across all strategies to keep bad nodes out of rotation.
 
 ## Architecture
 

@@ -417,8 +417,10 @@ type RateLimitConfig struct {
 func RateLimitConfigFromEnv() RateLimitConfig {
 	cfg := RateLimitConfig{
 		Enabled: true,
-		RPS:     20,
-		Burst:   40,
+		// Keep safe-by-default rate limiting enabled, but avoid throttling
+		// normal demo traffic bursts from a single client IP.
+		RPS:   200,
+		Burst: 400,
 	}
 	if raw := strings.TrimSpace(os.Getenv("RATE_LIMIT_ENABLED")); raw != "" {
 		cfg.Enabled = strings.EqualFold(raw, "true") || raw == "1" || strings.EqualFold(raw, "yes")

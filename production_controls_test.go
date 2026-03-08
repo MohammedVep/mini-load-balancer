@@ -108,6 +108,23 @@ func TestRateLimiterAllowAndRefill(t *testing.T) {
 	}
 }
 
+func TestRateLimitConfigDefaults(t *testing.T) {
+	t.Setenv("RATE_LIMIT_ENABLED", "")
+	t.Setenv("RATE_LIMIT_RPS", "")
+	t.Setenv("RATE_LIMIT_BURST", "")
+
+	cfg := RateLimitConfigFromEnv()
+	if !cfg.Enabled {
+		t.Fatal("expected default rate limiting to be enabled")
+	}
+	if cfg.RPS != 200 {
+		t.Fatalf("expected default RPS=200, got %v", cfg.RPS)
+	}
+	if cfg.Burst != 400 {
+		t.Fatalf("expected default burst=400, got %v", cfg.Burst)
+	}
+}
+
 func TestRateLimitMiddlewareBypassesHealthz(t *testing.T) {
 	limiter := NewRateLimiter(RateLimitConfig{
 		Enabled: true,

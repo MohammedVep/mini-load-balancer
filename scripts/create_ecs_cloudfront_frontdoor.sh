@@ -23,6 +23,7 @@ resolve_bin() {
 }
 
 AWS_BIN="${AWS_BIN:-$(resolve_bin aws /opt/homebrew/bin/aws /usr/local/bin/aws)}"
+JQ_BIN="${JQ_BIN:-$(resolve_bin jq /usr/bin/jq /opt/homebrew/bin/jq)}"
 AWS_PROFILE="${AWS_PROFILE:-}"
 
 ALB_DNS_NAME="${ALB_DNS_NAME:-mini-load-balancer-ecs-alb-1270380943.us-east-1.elb.amazonaws.com}"
@@ -372,9 +373,43 @@ JSON
   printf '%s' "${distribution_id}"
 }
 
+update_distribution_custom_domain() {
+  local distribution_id="$1"
+  local certificate_arn="$2"
+  local config_file updated_file etag
+
+  config_file="$(mktemp)"
+  updated_file="$(mktemp)"
+  aws_cli cloudfront get-distribution-config --id "${distribution_id}" >"${config_file}"
+  etag="$("${JQ_BIN}" -r '.ETag' "${config_file}")"
+
+  "${JQ_BIN}" \
+    --arg domain "${CUSTOM_DOMAIN}" \
+    --arg cert "${certificate_arn}" \
+    '
+      .DistributionConfig
+      | .Aliases = {Quantity: 1, Items: [$domain]}
+      | .ViewerCertificate = {
+          ACMCertificateArn: $cert,
+          SSLSupportMethod: "sni-only",
+          MinimumProtocolVersion: "TLSv1.2_2021",
+          Certificate: $cert,
+          CertificateSource: "acm"
+        }
+    ' "${config_file}" >"${updated_file}"
+
+  aws_cli cloudfront update-distribution \
+    --id "${distribution_id}" \
+    --if-match "${etag}" \
+    --distribution-config "file://${updated_file}" \
+    --query 'Distribution.Id' --output text
+
+  rm -f "${config_file}" "${updated_file}"
+}
+
 echo "[1/5] Checking for an existing front door..."
 EXISTING_DISTRIBUTION_ID="$(distribution_id_by_comment)"
-if [[ -n "${EXISTING_DISTRIBUTION_ID}" && "${EXISTING_DISTRIBUTION_ID}" != "None" ]]; then
+if [[ -n "${EXISTING_DISTRIBUTION_ID}" && "${EXISTING_DISTRIBUTION_ID}" != "None" && -z "${CUSTOM_DOMAIN}" ]]; then
   EXISTING_DOMAIN="$(distribution_domain_by_id "${EXISTING_DISTRIBUTION_ID}")"
   echo "CloudFront front door already exists."
   echo "  Distribution ID: ${EXISTING_DISTRIBUTION_ID}"
@@ -400,8 +435,13 @@ else
   echo "[2/5] Skipping ACM/custom-domain setup. CloudFront default domain will be used."
 fi
 
-echo "[3/5] Creating CloudFront distribution..."
-DISTRIBUTION_ID="$(create_distribution "${CERTIFICATE_ARN}")"
+if [[ -n "${EXISTING_DISTRIBUTION_ID}" && "${EXISTING_DISTRIBUTION_ID}" != "None" ]]; then
+  echo "[3/5] Updating existing CloudFront distribution..."
+  DISTRIBUTION_ID="$(update_distribution_custom_domain "${EXISTING_DISTRIBUTION_ID}" "${CERTIFICATE_ARN}")"
+else
+  echo "[3/5] Creating CloudFront distribution..."
+  DISTRIBUTION_ID="$(create_distribution "${CERTIFICATE_ARN}")"
+fi
 
 echo "[4/5] Waiting for CloudFront distribution to deploy..."
 wait_distribution_deployed "${DISTRIBUTION_ID}"

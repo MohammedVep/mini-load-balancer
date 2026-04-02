@@ -1,0 +1,27 @@
+aws_region   = "us-east-1"
+project_name = "mini-load-balancer"
+
+domain_name      = "miniloadbalancer.io"
+route53_zone_name = "miniloadbalancer.io"
+
+vpc_id = "vpc-01b8820eda6e42933"
+public_subnet_ids = [
+  "subnet-0a9f708e20d77e8de",
+  "subnet-017b80d77d8471856",
+]
+
+service_discovery_namespace_name = "np-prod.internal"
+
+load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260308145006"
+backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260307143411"
+
+# Optional: reuse the current production task execution role and ACM certificate.
+existing_execution_role_arn = "arn:aws:iam::194191749520:role/ecsTaskExecutionRole"
+existing_acm_certificate_arn = "arn:aws:acm:us-east-1:194191749520:certificate/7164b721-640c-4854-ac2b-435aafdbf21b"
+
+# Optional: subscribe an operator email to the SNS topic.
+alert_email = "you@example.com"
+
+tags = {
+  Environment = "prod"
+}

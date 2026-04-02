@@ -106,6 +106,10 @@ You can configure runtime via environment variables:
 - `COST_AI_INPUT_PER_1K_TOKENS_USD` (default `0.00015`)
 - `COST_AI_OUTPUT_PER_1K_TOKENS_USD` (default `0.00060`)
 
+## Infrastructure as Code
+
+A first-pass Terraform stack for the live AWS architecture is available under `infra/terraform`. It covers ECS/Fargate, the ALB, CloudFront, Route 53/ACM, CloudWatch/SNS, and ECR lifecycle policy.
+
 ## Current AWS Operations
 
 Create or update the CloudFront front door in front of the ECS ALB:

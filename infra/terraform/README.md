@@ -1,0 +1,63 @@
+# Terraform: Mini Load Balancer AWS Stack
+
+This directory contains a first-pass Terraform definition for the current production architecture:
+
+- ECR repository and lifecycle policy
+- ECS/Fargate cluster, task definitions, and services
+- ALB, target group, listener, and security groups
+- Cloud Map private DNS namespace for backend discovery
+- ACM, CloudFront, and Route 53 wiring for the public domain
+- CloudWatch dashboard and alarms backed by SNS
+
+## What This Stack Assumes
+
+- You already own the public domain in Route 53.
+- You already build and push container images to ECR.
+- You either let Terraform create a dedicated execution role and ACM certificate, or you pass the existing ARNs for the live stack.
+
+## Files
+
+- `versions.tf`: Terraform and provider constraints
+- `variables.tf`: input surface for the stack
+- `locals.tf`: derived names, env vars, and dashboard JSON
+- `ecr.tf`: repository and lifecycle policy
+- `iam.tf`: optional task execution role creation
+- `networking.tf`: ALB and security groups
+- `service_discovery.tf`: private DNS namespace and backend services
+- `ecs.tf`: log groups, cluster, task definitions, and ECS services
+- `cloudfront.tf`: ACM, validation records, CloudFront, and public DNS aliases
+- `monitoring.tf`: SNS, CloudWatch dashboard, and alarms
+- `outputs.tf`: stack outputs
+- `terraform.tfvars.example`: starting values aligned with the current production stack
+
+## Quick Start
+
+```bash
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform plan
+```
+
+Apply when the plan is correct:
+
+```bash
+terraform apply
+```
+
+## Current Production Adoption
+
+The example variable file is intentionally aligned to the current production names and IDs.
+
+Two safe ways to use this stack:
+
+1. Greenfield: change names and domain values in `terraform.tfvars`, then apply into a new environment.
+2. Adoption: keep the production names and import the existing AWS resources into Terraform state before the first apply.
+
+This repository does not yet include a scripted import plan because importing the live stack safely is state-sensitive and should be done intentionally.
+
+## Notes
+
+- CloudFront certificates must live in `us-east-1`; this stack uses a dedicated provider alias for that.
+- The ALB origin remains HTTP-only because TLS terminates at CloudFront in the current production design.
+- The backend services use Cloud Map A records so the load balancer task can resolve them internally by DNS name.

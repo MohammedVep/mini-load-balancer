@@ -29,6 +29,11 @@ resource "aws_ecs_task_definition" "load_balancer" {
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = local.execution_role_arn
 
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "app"
@@ -65,6 +70,11 @@ resource "aws_ecs_task_definition" "backend_a" {
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = local.execution_role_arn
 
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "app"
@@ -100,6 +110,11 @@ resource "aws_ecs_task_definition" "backend_b" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = local.execution_role_arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
 
   container_definitions = jsonencode([
     {
@@ -170,11 +185,12 @@ resource "aws_ecs_service" "backend_b" {
 }
 
 resource "aws_ecs_service" "load_balancer" {
-  name            = local.load_balancer_service_name
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.load_balancer.arn
-  desired_count   = var.load_balancer_desired_count
-  launch_type     = "FARGATE"
+  name                              = local.load_balancer_service_name
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.load_balancer.arn
+  desired_count                     = var.load_balancer_desired_count
+  launch_type                       = "FARGATE"
+  health_check_grace_period_seconds = 60
 
   network_configuration {
     subnets          = var.public_subnet_ids

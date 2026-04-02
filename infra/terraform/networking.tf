@@ -1,6 +1,6 @@
 resource "aws_security_group" "alb" {
   name        = local.alb_security_group_name
-  description = "Security group for ${var.project_name} ECS ALB"
+  description = "Security group for mini load balancer ECS ALB"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -23,7 +23,7 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "load_balancer_tasks" {
   name        = local.load_balancer_security_name
-  description = "Security group for ${var.project_name} ECS load balancer tasks"
+  description = "Security group for mini load balancer ECS tasks"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -46,7 +46,7 @@ resource "aws_security_group" "load_balancer_tasks" {
 
 resource "aws_security_group" "backend_tasks" {
   name        = local.backend_security_group_name
-  description = "Security group for ${var.project_name} ECS backends"
+  description = "Security group for mini load balancer ECS backends"
   vpc_id      = var.vpc_id
 
   ingress {

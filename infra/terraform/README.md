@@ -62,6 +62,29 @@ Production adoption files now live here:
 
 This import flow intentionally keeps the existing ECS task execution role and ACM certificate external to the stack for the first adoption pass. That reduces blast radius and avoids replacing working shared resources during the initial state import.
 
+## Remote Backend
+
+This stack supports an S3 backend with DynamoDB state locking.
+
+Tracked files:
+
+- `backend.tf`: enables the S3 backend
+- `backend.prod.hcl.example`: production backend settings template
+
+Local-only file:
+
+- `backend.prod.hcl`: copy from the example before running `terraform init`
+
+Migration flow:
+
+```bash
+cd infra/terraform
+cp backend.prod.hcl.example backend.prod.hcl
+terraform init -reconfigure -migrate-state -backend-config=backend.prod.hcl
+```
+
+If Terraform cannot read your default `aws login` session for backend auth on a given machine, add an explicit shared profile in the local `backend.prod.hcl` file or run Terraform with `AWS_PROFILE=<profile>`.
+
 ## Notes
 
 - CloudFront certificates must live in `us-east-1`; this stack uses a dedicated provider alias for that.

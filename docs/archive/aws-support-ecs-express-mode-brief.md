@@ -124,4 +124,4 @@ Specific questions:
 
 Migration automation added during this investigation:
 
-- [scripts/migrate_apprunner_stack_to_ecs_express.sh](/Users/mohammedvepari/Documents/Mini%20Load%20Balancer/scripts/migrate_apprunner_stack_to_ecs_express.sh)
+- `scripts/archive/migrations/migrate_apprunner_stack_to_ecs_express.sh`

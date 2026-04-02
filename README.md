@@ -3,37 +3,51 @@
 Production-style Go project that demonstrates core distributed-systems signals:
 
 - Traffic routing strategies: round robin, least connections, weighted routing, consistent hashing
-- Reliability mechanics: active health checks + automatic failover + circuit breaker
-- Bounded idempotent retries with backend failover
-- Health-check hysteresis (`health_fail_threshold`, `health_success_threshold`) to avoid flapping
-- Graceful draining for shutdown/redeploy
-- Operational visibility: admin control-plane endpoints
-- Request IDs, structured JSON logs, and Prometheus-style `/metrics`
-- Optional JWT/Cognito auth, per-IP rate limiting, and trace ID propagation
-- Cost awareness endpoint with request/egress/AI usage estimates
-- Recruiter-facing frontend: explains architecture and exposes live cluster state
-- AWS deployment path: containerized and deployable to App Runner
+- Reliability mechanics: active health checks, automatic failover, circuit breaker, retries, and graceful draining
+- Health-check hysteresis to avoid backend flapping during recovery
+- Recruiter-facing frontend that explains the system and exposes live cluster state
+- Operational visibility through `/admin/*`, structured logs, and Prometheus-style `/metrics`
+- AI copilot endpoint for runtime-aware routing and reliability guidance
+- Current production stack: Route 53 -> CloudFront -> ALB -> ECS/Fargate -> ECS backends
+
+## Live Production Stack
+
+Current public entrypoints:
+
+- [https://miniloadbalancer.io](https://miniloadbalancer.io)
+- [https://d1a0ru1gilc8jr.cloudfront.net](https://d1a0ru1gilc8jr.cloudfront.net)
+
+Current AWS layout:
+
+- Route 53 hosted zone for `miniloadbalancer.io`
+- CloudFront distribution `E1BF6B0VQTLRKS`
+- ALB `mini-load-balancer-ecs-alb`
+- ECS cluster `mini-load-balancer-fargate`
+- ECS services:
+  - `mini-load-balancer-ecs`
+  - `mini-load-balancer-backend-a-ecs`
+  - `mini-load-balancer-backend-b-ecs`
 
 ## What Runs Where
 
 - `GET /`:
   Recruiter-facing frontend with project narrative and live status dashboard.
 - `GET /admin/backends`:
-  Backend pool status (`alive`, `weight`, `active_connections`) + active strategy.
+  Backend pool status (`alive`, `weight`, `active_connections`) and active strategy.
 - `GET/POST /admin/strategy`:
-  Inspect/switch routing strategy.
+  Inspect or switch routing strategy.
 - `GET /admin/cost`:
-  Estimated cost dashboard (requests, egress, AI usage/tokens).
+  Estimated request, egress, and AI usage cost summary.
 - `GET /proxy/*`:
-  Proxied traffic routed to backend pool via selected strategy.
+  Proxied traffic routed to ECS backend services through the selected strategy.
 - `GET /healthz`:
-  Service health endpoint (used for deployment health checks).
+  Service health endpoint used by ECS and external smoke checks.
 - `GET /metrics`:
-  Prometheus scrape endpoint (latency, error, retry, failover, backend-selection metrics).
+  Prometheus scrape endpoint for latency, error, retry, failover, and backend-selection metrics.
 - `GET /ai/status`:
   AI provider and configuration status.
 - `POST /ai/analyze`:
-  AI copilot endpoint for strategy/reliability guidance using live runtime snapshot.
+  AI copilot endpoint for routing and reliability guidance using live runtime state.
 
 When `AUTH_MODE` is enabled, `/admin/*` and `/metrics` require `Authorization: Bearer <token>`.
 
@@ -50,18 +64,18 @@ Then open:
 
 - `http://localhost:8080/`
 - `http://localhost:8080/admin/backends`
-- `http://localhost:8080/proxy/`
+- `http://localhost:8080/proxy/whoami`
 
 ## Environment Variables
 
-You can configure runtime via env vars (useful in AWS):
+You can configure runtime via environment variables:
 
-- `BACKENDS` (required if `-backends` not passed)
+- `BACKENDS` (required if `-backends` is not passed)
 - `STRATEGY` (`round_robin`, `least_connections`, `weighted`, `consistent_hash`)
 - `BACKEND_WEIGHTS` (comma-separated ints aligned to `BACKENDS`, each `>= 1`)
 - `PROXY_PREFIX` (default `/proxy`)
 - `HEALTH_PATH` (default `/health`)
-- `ENABLE_FRONTEND` (`true`/`false`)
+- `ENABLE_FRONTEND` (`true` or `false`)
 - `MODE` (`load_balancer` or `backend_demo`)
 - `BACKEND_NAME` (used when `MODE=backend_demo`)
 - `MAX_RETRIES` (default `2`, idempotent methods only)
@@ -81,123 +95,82 @@ You can configure runtime via env vars (useful in AWS):
 - `AUTH_MODE` (`none`, `jwt_hs256`, `cognito_jwt`; default `none`)
 - `AUTH_JWT_HMAC_SECRET` (required if `AUTH_MODE=jwt_hs256`)
 - `AUTH_COGNITO_ISSUER` (required if `AUTH_MODE=cognito_jwt`)
-- `AUTH_COGNITO_AUDIENCE` (optional, recommended for Cognito/JWT audience check)
-- `RATE_LIMIT_ENABLED` (`true`/`false`; default `true`)
+- `AUTH_COGNITO_AUDIENCE` (optional, recommended)
+- `RATE_LIMIT_ENABLED` (`true` or `false`; default `true`)
 - `RATE_LIMIT_RPS` (default `20`)
 - `RATE_LIMIT_BURST` (default `40`)
-- `HIDE_UPSTREAM_HEADERS` (`true`/`false`; default `true`)
-- `COST_AWARENESS_ENABLED` (`true`/`false`; default `true`)
+- `HIDE_UPSTREAM_HEADERS` (`true` or `false`; default `true`)
+- `COST_AWARENESS_ENABLED` (`true` or `false`; default `true`)
 - `COST_PER_MILLION_REQUESTS_USD` (default `0.20`)
 - `COST_PER_GB_EGRESS_USD` (default `0.09`)
 - `COST_AI_INPUT_PER_1K_TOKENS_USD` (default `0.00015`)
 - `COST_AI_OUTPUT_PER_1K_TOKENS_USD` (default `0.00060`)
 
-## Deploy Full AWS-Owned Stack (Recommended)
+## Current AWS Operations
 
-This deploys:
-
-- `mini-load-balancer-backend-a` (your AWS backend service)
-- `mini-load-balancer-backend-b` (your AWS backend service)
-- `mini-load-balancer` (load balancer pointing to those two services)
-
-Run:
+Create or update the CloudFront front door in front of the ECS ALB:
 
 ```bash
-AWS_REGION="us-east-1" \
-LB_STRATEGY="least_connections" \
-./scripts/deploy_owned_stack.sh
+AWS_PROFILE="<profile>" \
+CUSTOM_DOMAIN="yourdomain.com" \
+HOSTED_ZONE_ID="/hostedzone/XXXXXXXXXXXX" \
+./scripts/create_ecs_cloudfront_frontdoor.sh
 ```
 
-After deployment:
-
-- homepage: `https://<mini-load-balancer-url>/`
-- backends status: `https://<mini-load-balancer-url>/admin/backends`
-- proxy demo: `https://<mini-load-balancer-url>/proxy/whoami`
-
-## AWS Deployment (App Runner)
-
-Prerequisites:
-
-- AWS CLI authenticated (`aws sts get-caller-identity` works)
-- Docker running locally
-- Reachable backend URLs for `BACKENDS` (public endpoints or VPC-accessible design)
-
-Run:
+Provision CloudWatch dashboard, SNS-backed alarms, and ECS/ALB/CloudFront metrics for the live stack:
 
 ```bash
-BACKENDS="http://backend-a.example.com,http://backend-b.example.com" \
-AWS_REGION="us-east-1" \
-./scripts/deploy_aws_apprunner.sh
-```
-
-Script actions:
-
-1. Creates/uses an ECR repository.
-2. Builds a Linux service binary.
-3. Builds and pushes container image.
-4. Creates/uses IAM role for App Runner ECR access.
-5. Creates or updates App Runner service.
-6. Waits for service to become `RUNNING`.
-7. Prints public HTTPS URL for your recruiter-facing site + APIs.
-
-## Custom Domain + HTTPS + Route 53
-
-Use this after the load balancer is running:
-
-```bash
-AWS_REGION="us-east-1" \
-LB_SERVICE_NAME="mini-load-balancer" \
-DOMAIN_NAME="lb.yourdomain.com" \
-./scripts/configure_custom_domain.sh
-```
-
-`DOMAIN_NAME` must be an existing valid domain/subdomain you control in DNS.
-
-## CloudWatch + WAF Hardening
-
-```bash
-AWS_REGION="us-east-1" \
-LB_SERVICE_NAME="mini-load-balancer" \
+AWS_PROFILE="<profile>" \
 ALERT_EMAIL="you@example.com" \
-./scripts/setup_monitoring_and_waf.sh
+./scripts/setup_ecs_observability.sh
 ```
 
-This sets up:
+Apply an ECR lifecycle policy so old images do not accumulate indefinitely:
 
-- CloudWatch dashboard (CPU, memory, request volume, error rates, p95 latency)
-- CloudWatch alarms + SNS topic
-- WAF Web ACL with managed rule groups + rate limiting
+```bash
+AWS_PROFILE="<profile>" \
+./scripts/apply_ecr_lifecycle_policy.sh
+```
+
+## Archived Migration Assets
+
+Historical App Runner deployment and migration utilities are retained for reference only:
+
+- `scripts/archive/README.md`
+- `scripts/archive/apprunner/deploy_aws_apprunner.sh`
+- `scripts/archive/apprunner/configure_custom_domain.sh`
+- `scripts/archive/apprunner/deploy_owned_stack.sh`
+- `scripts/archive/apprunner/setup_monitoring_and_waf.sh`
+- `scripts/archive/migrations/migrate_apprunner_stack_to_ecs_express.sh`
+- `scripts/archive/migrations/migrate_apprunner_stack_to_ecs_fargate.sh`
+- `docs/archive/aws-support-ecs-express-mode-brief.md`
 
 ## Recruiter Demo Script
 
-1. Open homepage and explain why each strategy exists.
-2. Open live control-plane and switch strategies in real time.
-3. Call out health checks/failover as reliability primitives.
-4. Mention consistent hashing for sticky distribution and reduced reshuffling.
-5. Show `/admin/backends` as operational observability evidence.
-
-## Algorithm Trade-offs
-
-- `round_robin`: best when backends are homogeneous and you want simple fair distribution.
-- `least_connections`: best when request duration varies and you want adaptive balancing.
-- `weighted`: best when backend capacity differs and stronger nodes should take more traffic.
-- `consistent_hash`: best for request affinity/cache locality and reduced reshuffling.
-- `health checks + failover`: reliability layer used across all strategies to keep bad nodes out of rotation.
+1. Open the homepage and explain why each routing strategy exists.
+2. Show `/admin/backends` and `/admin/strategy` as the control plane.
+3. Call out health checks, failover, retries, and circuit breaking as reliability primitives.
+4. Show `/proxy/whoami` to prove live backend selection.
+5. Show `/metrics` and the CloudWatch dashboard to demonstrate operational maturity.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["Users"] --> A["App Runner Service (Mini LB)"]
-    A --> F["Frontend (/)"]
-    A --> C["Control Plane (/admin/*)"]
-    A --> P["Proxy Plane (/proxy/*)"]
-    P --> B1["Backend A"]
-    P --> B2["Backend B"]
-    P --> B3["Backend C"]
-    A -. "Health Probes" .-> B1
-    A -. "Health Probes" .-> B2
-    A -. "Health Probes" .-> B3
+    U["Users"] --> R53["Route 53"]
+    R53 --> CF["CloudFront"]
+    CF --> ALB["ALB"]
+    ALB --> LB["ECS Fargate: mini-load-balancer-ecs"]
+    LB --> FE["Frontend (/) and Admin (/admin/*)"]
+    LB --> PX["Proxy Plane (/proxy/*)"]
+    PX --> B1["ECS Backend A"]
+    PX --> B2["ECS Backend B"]
+    LB -. "Health Probes" .-> B1
+    LB -. "Health Probes" .-> B2
+    LB -. "Metrics / Alarms" .-> CW["CloudWatch + SNS"]
+    ECR["Amazon ECR"] --> LB
+    ECR --> B1
+    ECR --> B2
 ```
 
 ## Test

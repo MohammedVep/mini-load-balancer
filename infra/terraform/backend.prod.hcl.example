@@ -1,0 +1,7 @@
+# Optional when Terraform needs an explicit shared profile for backend auth.
+# profile = "netpulse-root"
+bucket         = "netpulse-terraform-state-194191749520-us-east-1"
+key            = "infra/aws/mini-load-balancer/prod.tfstate"
+region         = "us-east-1"
+dynamodb_table = "netpulse-terraform-locks"
+encrypt        = true

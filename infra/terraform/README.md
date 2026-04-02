@@ -54,10 +54,17 @@ Two safe ways to use this stack:
 1. Greenfield: change names and domain values in `terraform.tfvars`, then apply into a new environment.
 2. Adoption: keep the production names and import the existing AWS resources into Terraform state before the first apply.
 
-This repository does not yet include a scripted import plan because importing the live stack safely is state-sensitive and should be done intentionally.
+Production adoption files now live here:
+
+- `terraform.prod.tfvars.example`: live production values and external-resource wiring
+- `imports.prod.tf.example`: import blocks for the current ECS, ALB, CloudFront, Route 53, Cloud Map, ECR, and CloudWatch resources
+- `IMPORT.md`: step-by-step runbook for importing the live stack into Terraform state
+
+This import flow intentionally keeps the existing ECS task execution role and ACM certificate external to the stack for the first adoption pass. That reduces blast radius and avoids replacing working shared resources during the initial state import.
 
 ## Notes
 
 - CloudFront certificates must live in `us-east-1`; this stack uses a dedicated provider alias for that.
 - The ALB origin remains HTTP-only because TLS terminates at CloudFront in the current production design.
 - The backend services use Cloud Map A records so the load balancer task can resolve them internally by DNS name.
+- The ALB listener models both `target_group_arn` and the nested `forward` block to match AWS import behavior and avoid a permanent diff after import.

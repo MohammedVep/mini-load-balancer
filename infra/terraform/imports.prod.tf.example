@@ -1,0 +1,159 @@
+import {
+  to = aws_ecr_repository.this
+  id = "mini-load-balancer"
+}
+
+import {
+  to = aws_ecr_lifecycle_policy.this
+  id = "mini-load-balancer"
+}
+
+import {
+  to = aws_cloudwatch_log_group.load_balancer
+  id = "/ecs/mini-load-balancer-ecs"
+}
+
+import {
+  to = aws_cloudwatch_log_group.backend_a
+  id = "/ecs/mini-load-balancer-backend-a-ecs"
+}
+
+import {
+  to = aws_cloudwatch_log_group.backend_b
+  id = "/ecs/mini-load-balancer-backend-b-ecs"
+}
+
+import {
+  to = aws_ecs_cluster.this
+  id = "mini-load-balancer-fargate"
+}
+
+import {
+  to = aws_security_group.alb
+  id = "sg-0c410b119157a474d"
+}
+
+import {
+  to = aws_security_group.load_balancer_tasks
+  id = "sg-095c74836cd412e38"
+}
+
+import {
+  to = aws_security_group.backend_tasks
+  id = "sg-0f12f3bb17e952cd5"
+}
+
+import {
+  to = aws_lb.this
+  id = "arn:aws:elasticloadbalancing:us-east-1:194191749520:loadbalancer/app/mini-load-balancer-ecs-alb/fd311a2cab94d122"
+}
+
+import {
+  to = aws_lb_target_group.load_balancer
+  id = "arn:aws:elasticloadbalancing:us-east-1:194191749520:targetgroup/mini-load-balancer-ecs-tg/e699156c6846f539"
+}
+
+import {
+  to = aws_lb_listener.http
+  id = "arn:aws:elasticloadbalancing:us-east-1:194191749520:listener/app/mini-load-balancer-ecs-alb/fd311a2cab94d122/6f29cc3e1284fa2d"
+}
+
+import {
+  to = aws_service_discovery_private_dns_namespace.this
+  id = "ns-ds56tjw5q5vn2m4q:vpc-01b8820eda6e42933"
+}
+
+import {
+  to = aws_service_discovery_service.backend_a
+  id = "srv-x7dstgdd3m4pujql"
+}
+
+import {
+  to = aws_service_discovery_service.backend_b
+  id = "srv-mxzyofmdw553agxk"
+}
+
+import {
+  to = aws_ecs_task_definition.load_balancer
+  id = "arn:aws:ecs:us-east-1:194191749520:task-definition/mini-load-balancer-ecs:1"
+}
+
+import {
+  to = aws_ecs_task_definition.backend_a
+  id = "arn:aws:ecs:us-east-1:194191749520:task-definition/mini-load-balancer-backend-a-ecs:1"
+}
+
+import {
+  to = aws_ecs_task_definition.backend_b
+  id = "arn:aws:ecs:us-east-1:194191749520:task-definition/mini-load-balancer-backend-b-ecs:1"
+}
+
+import {
+  to = aws_ecs_service.load_balancer
+  id = "mini-load-balancer-fargate/mini-load-balancer-ecs"
+}
+
+import {
+  to = aws_ecs_service.backend_a
+  id = "mini-load-balancer-fargate/mini-load-balancer-backend-a-ecs"
+}
+
+import {
+  to = aws_ecs_service.backend_b
+  id = "mini-load-balancer-fargate/mini-load-balancer-backend-b-ecs"
+}
+
+import {
+  to = aws_cloudfront_distribution.frontdoor
+  id = "E1BF6B0VQTLRKS"
+}
+
+import {
+  to = aws_route53_record.frontdoor_a
+  id = "Z0393609T8LQ897NYPHK_miniloadbalancer.io_A"
+}
+
+import {
+  to = aws_route53_record.frontdoor_aaaa
+  id = "Z0393609T8LQ897NYPHK_miniloadbalancer.io_AAAA"
+}
+
+import {
+  to = aws_sns_topic.alerts
+  id = "arn:aws:sns:us-east-1:194191749520:mini-load-balancer-alerts"
+}
+
+import {
+  to = aws_cloudwatch_dashboard.ops
+  id = "mini-load-balancer-ecs-ops"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.ecs_cpu_high
+  id = "mini-load-balancer-ecs-cpu-high"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.ecs_memory_high
+  id = "mini-load-balancer-ecs-memory-high"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.alb_target_5xx_high
+  id = "mini-load-balancer-alb-target-5xx-high"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.alb_unhealthy_hosts
+  id = "mini-load-balancer-alb-unhealthy-hosts"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.alb_latency_p95_high
+  id = "mini-load-balancer-alb-latency-p95-high"
+}
+
+import {
+  to = aws_cloudwatch_metric_alarm.cloudfront_5xx_rate_high
+  id = "mini-load-balancer-cloudfront-5xx-rate-high"
+}

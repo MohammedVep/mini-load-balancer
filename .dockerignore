@@ -1,5 +1,9 @@
 .git
 .gitignore
-README.md
-scripts
-*test.go
+.terraform
+build
+docs/archive
+infra/terraform/.terraform
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+scripts/archive

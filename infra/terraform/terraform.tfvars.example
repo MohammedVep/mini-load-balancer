@@ -12,8 +12,10 @@ public_subnet_ids = [
 
 service_discovery_namespace_name = "np-prod.internal"
 
-load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260308145006"
-backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260307143411"
+load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
+backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
+load_balancer_cpu_architecture = "ARM64"
+backend_cpu_architecture = "ARM64"
 
 # Optional: reuse the current production task execution role and ACM certificate.
 existing_execution_role_arn = "arn:aws:iam::194191749520:role/ecsTaskExecutionRole"

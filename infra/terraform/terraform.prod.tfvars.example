@@ -12,8 +12,8 @@ public_subnet_ids = [
 
 service_discovery_namespace_name = "np-prod.internal"
 
-load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260308145006"
-backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260307143411"
+load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
+backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
 
 # Keep these external for the first import pass so Terraform adopts the live
 # stack without taking ownership of already-working shared resources.
@@ -22,8 +22,10 @@ existing_acm_certificate_arn  = "arn:aws:acm:us-east-1:194191749520:certificate/
 
 load_balancer_cpu    = 512
 load_balancer_memory = 1024
+load_balancer_cpu_architecture = "ARM64"
 backend_cpu          = 256
 backend_memory       = 512
+backend_cpu_architecture = "ARM64"
 
 # Leave null during import unless you intentionally want Terraform to manage an
 # SNS email subscription too.

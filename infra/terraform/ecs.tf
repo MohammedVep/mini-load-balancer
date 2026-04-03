@@ -31,7 +31,7 @@ resource "aws_ecs_task_definition" "load_balancer" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = "X86_64"
+    cpu_architecture        = var.load_balancer_cpu_architecture
   }
 
   container_definitions = jsonencode([
@@ -72,7 +72,7 @@ resource "aws_ecs_task_definition" "backend_a" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = "X86_64"
+    cpu_architecture        = var.backend_cpu_architecture
   }
 
   container_definitions = jsonencode([
@@ -113,7 +113,7 @@ resource "aws_ecs_task_definition" "backend_b" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = "X86_64"
+    cpu_architecture        = var.backend_cpu_architecture
   }
 
   container_definitions = jsonencode([

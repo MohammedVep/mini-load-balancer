@@ -22,14 +22,16 @@ This retention cut is valid operational hygiene, but it is not the primary cost 
 
 ### Current state
 
-- ECS task definitions are pinned to `cpu_architecture = "X86_64"` in [infra/terraform/ecs.tf](/Users/mohammedvepari/Documents/Mini%20Load%20Balancer-main-clean/infra/terraform/ecs.tf).
-- The live load balancer image tag `20260308145006` is an OCI image index with only an `amd64` Linux manifest.
-- The live backend image tag `20260307143411` is a single-architecture OCI image manifest.
-- The Go application itself cross-compiles successfully for `linux/arm64`.
+- The Go application cross-compiles successfully for `linux/arm64`.
+- A multi-architecture image manifest is now published at tag `20260403085539`.
+- The live ECS services now run on `ARM64` task definitions:
+  - `mini-load-balancer-ecs:3`
+  - `mini-load-balancer-backend-a-ecs:3`
+  - `mini-load-balancer-backend-b-ecs:3`
 
 ### Conclusion
 
-Graviton is feasible for this stack, but not deployable yet. The blocker is image publication and task-definition configuration, not source compatibility.
+Graviton is worth it for this stack because the implementation cost is low once multi-arch publishing exists, and the live cutover is now complete. The absolute savings are modest, but the platform portability and cost discipline are both strong recruiter signals.
 
 ### Estimated savings
 
@@ -50,12 +52,12 @@ Using AWS Fargate US East (N. Virginia) published rates for a 30-day month:
 - Linux/ARM: about `$28.44`
 - projected compute savings: about `$7.11/month` or `20%`
 
-### Required work before ARM cutover
+### What changed
 
-1. Publish multi-architecture images that include `linux/arm64`.
-2. Switch Terraform `runtime_platform.cpu_architecture` to `ARM64`.
-3. Roll backend services first and smoke test them.
-4. Roll the public load balancer service last.
+1. Added a multi-stage Docker build that compiles for the target architecture.
+2. Added [build_and_push_multiarch_image.sh](/Users/mohammedvepari/Documents/Mini%20Load%20Balancer-main-clean/scripts/build_and_push_multiarch_image.sh) to publish `linux/amd64` and `linux/arm64` in one manifest.
+3. Added Terraform variables so backends and the public load balancer can switch architectures independently.
+4. Rolled the backends to ARM first, then rolled the public load balancer after smoke checks.
 
 ## VPC Endpoint Audit
 
@@ -92,15 +94,23 @@ The live mini-load-balancer production VPC `vpc-01b8820eda6e42933` has `0` VPC e
 
 The broader account VPC endpoint spend is not coming from the live mini-load-balancer stack. It is coming from a separate default-VPC footprint tagged `ccee`.
 
+That footprint is active:
+
+- ECS service `ccee-api` is running at `desired=1`, `running=1`, with a public IP.
+- ECS service `ccee-worker` is configured with autoscaling from `0` to `10`, `AssignPublicIp=DISABLED`, and no NAT gateway exists in that VPC.
+- EventBridge rules `ccee-dlq-replay` and `ccee-dlq-replay-offpeak` launch Fargate tasks in the same subnets with `AssignPublicIp=DISABLED`.
+
+Because the default VPC has no NAT gateways, those private-only tasks depend on the endpoint set for AWS API access.
+
 ### Highest-impact next action
 
-If `Project=ccee` is not an active workload, deleting those interface endpoints is the strongest remaining cost reduction in the account. AWS PrivateLink pricing bills interface endpoints by hour for each endpoint ENI, while this account is currently showing negligible endpoint-byte charges. That is exactly the profile of idle but still-billable interface endpoints.
+Do not delete the `ccee` endpoints until that workload is retired or re-networked. The better savings decision is to review whether `ccee` should keep using the default VPC at all, or whether its private-only jobs should be redesigned around public IPs or a different egress pattern. The current endpoint charges are real, but immediate deletion would break active automation.
 
 ## Recommendation Order
 
 1. Leave the current `7`-day retention in place.
-2. Treat Graviton as a second-pass optimization after adding multi-arch image publishing.
-3. Audit or remove the `ccee` default-VPC interface endpoints before spending more time tuning this stack.
+2. Add multi-arch image publishing so this stack can move to Graviton.
+3. Leave the `ccee` endpoint set alone unless that workload is being intentionally migrated or decommissioned.
 
 ## Sources
 

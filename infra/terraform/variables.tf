@@ -77,6 +77,28 @@ variable "backend_memory" {
   default     = 2048
 }
 
+variable "load_balancer_cpu_architecture" {
+  description = "CPU architecture for the load balancer task definition."
+  type        = string
+  default     = "X86_64"
+
+  validation {
+    condition     = contains(["X86_64", "ARM64"], var.load_balancer_cpu_architecture)
+    error_message = "load_balancer_cpu_architecture must be X86_64 or ARM64."
+  }
+}
+
+variable "backend_cpu_architecture" {
+  description = "CPU architecture for each backend task definition."
+  type        = string
+  default     = "X86_64"
+
+  validation {
+    condition     = contains(["X86_64", "ARM64"], var.backend_cpu_architecture)
+    error_message = "backend_cpu_architecture must be X86_64 or ARM64."
+  }
+}
+
 variable "load_balancer_desired_count" {
   description = "Desired number of load balancer tasks."
   type        = number

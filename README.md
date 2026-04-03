@@ -136,6 +136,14 @@ AWS_PROFILE="<profile>" \
 ./scripts/apply_ecr_lifecycle_policy.sh
 ```
 
+Build and push a multi-architecture image manifest for both `linux/amd64` and `linux/arm64`:
+
+```bash
+AWS_PROFILE="<profile>" \
+IMAGE_TAG="$(date +%Y%m%d%H%M%S)" \
+./scripts/build_and_push_multiarch_image.sh
+```
+
 ## Archived Migration Assets
 
 Historical App Runner deployment and migration utilities are retained for reference only:
@@ -164,11 +172,11 @@ flowchart LR
     U["Users"] --> R53["Route 53"]
     R53 --> CF["CloudFront"]
     CF --> ALB["ALB"]
-    ALB --> LB["ECS Fargate: mini-load-balancer-ecs"]
+    ALB --> LB["ECS Fargate (ARM64): mini-load-balancer-ecs"]
     LB --> FE["Frontend (/) and Admin (/admin/*)"]
     LB --> PX["Proxy Plane (/proxy/*)"]
-    PX --> B1["ECS Backend A"]
-    PX --> B2["ECS Backend B"]
+    PX --> B1["ECS Backend A (ARM64)"]
+    PX --> B2["ECS Backend B (ARM64)"]
     LB -. "Health Probes" .-> B1
     LB -. "Health Probes" .-> B2
     LB -. "Metrics / Alarms" .-> CW["CloudWatch + SNS"]

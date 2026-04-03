@@ -20,6 +20,11 @@ backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-ba
 existing_execution_role_arn   = "arn:aws:iam::194191749520:role/ecsTaskExecutionRole"
 existing_acm_certificate_arn  = "arn:aws:acm:us-east-1:194191749520:certificate/7164b721-640c-4854-ac2b-435aafdbf21b"
 
+load_balancer_cpu    = 512
+load_balancer_memory = 1024
+backend_cpu          = 256
+backend_memory       = 512
+
 # Leave null during import unless you intentionally want Terraform to manage an
 # SNS email subscription too.
 alert_email = null

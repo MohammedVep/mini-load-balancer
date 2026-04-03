@@ -170,7 +170,7 @@ variable "alert_email" {
 variable "log_retention_days" {
   description = "Retention in days for ECS application log groups."
   type        = number
-  default     = 14
+  default     = 7
 }
 
 variable "ecr_scan_on_push" {

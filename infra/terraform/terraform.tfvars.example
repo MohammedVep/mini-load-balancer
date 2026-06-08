@@ -12,8 +12,12 @@ public_subnet_ids = [
 
 service_discovery_namespace_name = "np-prod.internal"
 
-load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
-backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260403085539"
+load_balancer_image = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260608174652"
+backend_image       = "194191749520.dkr.ecr.us-east-1.amazonaws.com/mini-load-balancer:20260608174652"
+load_balancer_cpu    = 256
+load_balancer_memory = 512
+backend_cpu          = 256
+backend_memory       = 512
 load_balancer_cpu_architecture = "ARM64"
 backend_cpu_architecture = "ARM64"
 

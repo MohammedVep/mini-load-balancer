@@ -276,7 +276,7 @@ func (ai *AISystem) callResponsesAPI(ctx context.Context, question string, s AIS
 	}
 
 	snapshotJSON, _ := json.Marshal(s)
-	systemPrompt := "You are an AI copilot for a mini load balancer. Be concise, practical, and action-oriented."
+	systemPrompt := "You are an AI copilot for EdgeBalancer, a Go traffic router. Be concise, practical, and action-oriented."
 	userPrompt := fmt.Sprintf("Question: %s\nLive snapshot: %s\nHeuristic baseline: %s\nReturn concise operational guidance.",
 		question, string(snapshotJSON), heuristic)
 
@@ -354,7 +354,7 @@ func (ai *AISystem) callChatCompletionsAPI(ctx context.Context, question string,
 	body := requestBody{
 		Model: ai.config.OpenAIModel,
 		Messages: []any{
-			map[string]string{"role": "system", "content": "You are an AI copilot for a mini load balancer. Be concise and operational."},
+			map[string]string{"role": "system", "content": "You are an AI copilot for EdgeBalancer, a Go traffic router. Be concise and operational."},
 			map[string]string{
 				"role": "user",
 				"content": fmt.Sprintf("Question: %s\nSnapshot: %s\nHeuristic baseline: %s\nReturn concise guidance.",

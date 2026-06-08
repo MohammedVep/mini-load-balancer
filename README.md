@@ -1,11 +1,11 @@
-# Mini Load Balancer
+# EdgeBalancer
 
-Production-style Go project that demonstrates core distributed-systems signals:
+Production-style Go infrastructure project that demonstrates core distributed-systems signals:
 
 - Traffic routing strategies: round robin, least connections, weighted routing, consistent hashing
 - Reliability mechanics: active health checks, automatic failover, circuit breaker, retries, and graceful draining
 - Health-check hysteresis to avoid backend flapping during recovery
-- Recruiter-facing frontend that explains the system and exposes live cluster state
+- Recruiter-facing EdgeBalancer frontend with a live control plane and metrics dashboard
 - Operational visibility through `/admin/*`, structured logs, and Prometheus-style `/metrics`
 - AI copilot endpoint for runtime-aware routing and reliability guidance
 - Current production stack: Route 53 -> CloudFront -> ALB -> ECS/Fargate -> ECS backends
@@ -31,13 +31,15 @@ Current AWS layout:
 ## What Runs Where
 
 - `GET /`:
-  Recruiter-facing frontend with project narrative and live status dashboard.
+  EdgeBalancer frontend with project narrative, live backend state, and metrics dashboard.
 - `GET /admin/backends`:
   Backend pool status (`alive`, `weight`, `active_connections`) and active strategy.
 - `GET/POST /admin/strategy`:
   Inspect or switch routing strategy.
 - `GET /admin/cost`:
   Estimated request, egress, and AI usage cost summary.
+- `GET /admin/metrics-summary`:
+  JSON dashboard summary for request volume, retries, failovers, upstream errors, circuit opens, backend selection, and latency averages.
 - `GET /proxy/*`:
   Proxied traffic routed to ECS backend services through the selected strategy.
 - `GET /healthz`:
@@ -159,11 +161,11 @@ Historical App Runner deployment and migration utilities are retained for refere
 
 ## Recruiter Demo Script
 
-1. Open the homepage and explain why each routing strategy exists.
+1. Open the EdgeBalancer homepage and explain the six infrastructure capabilities: health checks, round robin, least connections, circuit breakers, rate limiting, and metrics.
 2. Show `/admin/backends` and `/admin/strategy` as the control plane.
-3. Call out health checks, failover, retries, and circuit breaking as reliability primitives.
+3. Use the Metrics Dashboard to show live requests, retries, failovers, circuit opens, backend selection, and latency.
 4. Show `/proxy/whoami` to prove live backend selection.
-5. Show `/metrics` and the CloudWatch dashboard to demonstrate operational maturity.
+5. Show `/metrics` and the CloudWatch dashboard to demonstrate operational maturity beyond the browser UI.
 
 ## Architecture
 
@@ -172,8 +174,8 @@ flowchart LR
     U["Users"] --> R53["Route 53"]
     R53 --> CF["CloudFront"]
     CF --> ALB["ALB"]
-    ALB --> LB["ECS Fargate (ARM64): mini-load-balancer-ecs"]
-    LB --> FE["Frontend (/) and Admin (/admin/*)"]
+    ALB --> LB["ECS Fargate (ARM64): EdgeBalancer"]
+    LB --> FE["Frontend (/), Admin (/admin/*), Metrics Summary"]
     LB --> PX["Proxy Plane (/proxy/*)"]
     PX --> B1["ECS Backend A (ARM64)"]
     PX --> B2["ECS Backend B (ARM64)"]

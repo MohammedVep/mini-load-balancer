@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -44,6 +45,52 @@ type MetricsSnapshot struct {
 	RequestsTotal       uint64
 	UpstreamErrorsTotal uint64
 	CircuitOpensTotal   uint64
+}
+
+type MetricsDashboardSnapshot struct {
+	InFlightRequests    int64                    `json:"in_flight_requests"`
+	RequestsTotal       uint64                   `json:"requests_total"`
+	RetriesTotal        uint64                   `json:"retries_total"`
+	FailoversTotal      uint64                   `json:"failovers_total"`
+	UpstreamErrorsTotal uint64                   `json:"upstream_errors_total"`
+	CircuitOpensTotal   uint64                   `json:"circuit_opens_total"`
+	StatusClasses       map[string]uint64        `json:"status_classes"`
+	Routes              []RouteMetric            `json:"routes"`
+	BackendSelections   []BackendSelectionMetric `json:"backend_selections"`
+	UpstreamErrors      []UpstreamErrorMetric    `json:"upstream_errors"`
+	CircuitOpens        []CircuitOpenMetric      `json:"circuit_opens"`
+	Latencies           []LatencyMetric          `json:"latencies"`
+}
+
+type RouteMetric struct {
+	Method string `json:"method"`
+	Route  string `json:"route"`
+	Status string `json:"status"`
+	Count  uint64 `json:"count"`
+}
+
+type BackendSelectionMetric struct {
+	Backend  string `json:"backend"`
+	Strategy string `json:"strategy"`
+	Count    uint64 `json:"count"`
+}
+
+type UpstreamErrorMetric struct {
+	Backend string `json:"backend"`
+	Reason  string `json:"reason"`
+	Count   uint64 `json:"count"`
+}
+
+type CircuitOpenMetric struct {
+	Backend string `json:"backend"`
+	Count   uint64 `json:"count"`
+}
+
+type LatencyMetric struct {
+	Method    string  `json:"method"`
+	Route     string  `json:"route"`
+	Count     uint64  `json:"count"`
+	AverageMS float64 `json:"average_ms"`
 }
 
 func NewLBMetrics() *LBMetrics {
@@ -130,6 +177,15 @@ func (m *LBMetrics) Handler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(m.RenderPrometheus()))
 }
 
+func (m *LBMetrics) DashboardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(m.DashboardSnapshot())
+}
+
 func (m *LBMetrics) RenderPrometheus() string {
 	m.mu.Lock()
 	requests := copyCounterMap(m.requests)
@@ -194,6 +250,89 @@ func (m *LBMetrics) Snapshot() MetricsSnapshot {
 	for _, value := range m.circuitOpens {
 		snapshot.CircuitOpensTotal += value
 	}
+	return snapshot
+}
+
+func (m *LBMetrics) DashboardSnapshot() MetricsDashboardSnapshot {
+	m.mu.Lock()
+	requests := copyCounterMap(m.requests)
+	backendSelection := copyCounterMap(m.backendSelection)
+	upstreamErrors := copyCounterMap(m.upstreamErrors)
+	circuitOpens := copyCounterMap(m.circuitOpens)
+	latencies := copyLatencyMap(m.latencies)
+	m.mu.Unlock()
+
+	snapshot := MetricsDashboardSnapshot{
+		InFlightRequests: m.inFlight.Load(),
+		RetriesTotal:     m.retriesTotal.Load(),
+		FailoversTotal:   m.failovers.Load(),
+		StatusClasses: map[string]uint64{
+			"2xx": 0,
+			"3xx": 0,
+			"4xx": 0,
+			"5xx": 0,
+		},
+	}
+
+	for _, key := range sortedKeys(requests) {
+		parts := splitKey(key, 3)
+		count := requests[key]
+		status := parts[2]
+		snapshot.RequestsTotal += count
+		snapshot.StatusClasses[statusClass(status)] += count
+		snapshot.Routes = append(snapshot.Routes, RouteMetric{
+			Method: parts[0],
+			Route:  parts[1],
+			Status: status,
+			Count:  count,
+		})
+	}
+
+	for _, key := range sortedKeys(backendSelection) {
+		parts := splitKey(key, 2)
+		snapshot.BackendSelections = append(snapshot.BackendSelections, BackendSelectionMetric{
+			Backend:  parts[0],
+			Strategy: parts[1],
+			Count:    backendSelection[key],
+		})
+	}
+
+	for _, key := range sortedKeys(upstreamErrors) {
+		parts := splitKey(key, 2)
+		count := upstreamErrors[key]
+		snapshot.UpstreamErrorsTotal += count
+		snapshot.UpstreamErrors = append(snapshot.UpstreamErrors, UpstreamErrorMetric{
+			Backend: parts[0],
+			Reason:  parts[1],
+			Count:   count,
+		})
+	}
+
+	for _, key := range sortedKeys(circuitOpens) {
+		parts := splitKey(key, 1)
+		count := circuitOpens[key]
+		snapshot.CircuitOpensTotal += count
+		snapshot.CircuitOpens = append(snapshot.CircuitOpens, CircuitOpenMetric{
+			Backend: parts[0],
+			Count:   count,
+		})
+	}
+
+	for _, key := range sortedKeys(latencies) {
+		parts := splitKey(key, 2)
+		latency := latencies[key]
+		averageMS := 0.0
+		if latency.count > 0 {
+			averageMS = (latency.sum / float64(latency.count)) * 1000
+		}
+		snapshot.Latencies = append(snapshot.Latencies, LatencyMetric{
+			Method:    parts[0],
+			Route:     parts[1],
+			Count:     latency.count,
+			AverageMS: averageMS,
+		})
+	}
+
 	return snapshot
 }
 
@@ -315,12 +454,39 @@ func labelKey(parts ...string) string {
 	return strings.Join(parts, keyDelim)
 }
 
+func sortedKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func splitKey(key string, expected int) []string {
 	parts := strings.Split(key, keyDelim)
 	for len(parts) < expected {
 		parts = append(parts, "")
 	}
 	return parts
+}
+
+func statusClass(status string) string {
+	if len(status) != 3 {
+		return "other"
+	}
+	switch status[0] {
+	case '2':
+		return "2xx"
+	case '3':
+		return "3xx"
+	case '4':
+		return "4xx"
+	case '5':
+		return "5xx"
+	default:
+		return "other"
+	}
 }
 
 func escapeLabel(value string) string {

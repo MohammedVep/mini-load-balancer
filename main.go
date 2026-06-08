@@ -164,6 +164,8 @@ func main() {
 			w.Write([]byte(`{"status":"ok"}`))
 		case r.URL.Path == "/metrics":
 			metrics.Handler(w, r)
+		case r.URL.Path == "/admin/metrics-summary":
+			metrics.DashboardHandler(w, r)
 		case r.URL.Path == "/ai/status":
 			aiSystem.StatusHandler(w, r)
 		case r.URL.Path == "/ai/analyze":

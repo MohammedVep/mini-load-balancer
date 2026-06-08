@@ -2,25 +2,41 @@
   const cfg = window.__MINILB_CONFIG || { proxyPrefix: "/proxy", aiProvider: "heuristic" };
   const proxyPrefix = cfg.proxyPrefix || "/proxy";
   const configuredAIProvider = cfg.aiProvider || "heuristic";
+
   const strategyLabel = document.getElementById("strategy-label");
   const backendGrid = document.getElementById("backend-grid");
   const statusMessage = document.getElementById("status-message");
+  const metricsMessage = document.getElementById("metrics-message");
   const proxyLabel = document.getElementById("proxy-label");
   const costLabel = document.getElementById("cost-label");
   const refreshBtn = document.getElementById("refresh-btn");
-  const chips = Array.from(document.querySelectorAll(".chip"));
+  const strategyChips = Array.from(document.querySelectorAll("[data-strategy]"));
   const aiProviderLabel = document.getElementById("ai-provider-label");
   const aiQuestion = document.getElementById("ai-question");
   const aiAskBtn = document.getElementById("ai-ask-btn");
   const aiAnswer = document.getElementById("ai-answer");
   const aiPromptButtons = Array.from(document.querySelectorAll(".ai-prompt"));
+  const metricElements = {
+    requests: document.getElementById("metric-requests"),
+    inflight: document.getElementById("metric-inflight"),
+    retries: document.getElementById("metric-retries"),
+    failovers: document.getElementById("metric-failovers"),
+    upstreamErrors: document.getElementById("metric-upstream-errors"),
+    circuitOpens: document.getElementById("metric-circuit-opens"),
+  };
+  const statusBars = document.getElementById("status-bars");
+  const selectionBars = document.getElementById("selection-bars");
+  const latencyTable = document.getElementById("latency-table");
 
   proxyLabel.textContent = proxyPrefix + "/";
   aiProviderLabel.textContent = configuredAIProvider;
 
-  function setStatus(text, isError) {
-    statusMessage.textContent = text;
-    statusMessage.style.color = isError ? "var(--danger)" : "var(--muted)";
+  function setStatus(target, text, isError) {
+    if (!target) {
+      return;
+    }
+    target.textContent = text;
+    target.style.color = isError ? "var(--danger)" : "var(--muted)";
   }
 
   async function fetchJSON(url, init) {
@@ -32,7 +48,7 @@
   }
 
   function markActiveChip(strategy) {
-    chips.forEach((chip) => {
+    strategyChips.forEach((chip) => {
       const active = chip.getAttribute("data-strategy") === strategy;
       chip.classList.toggle("active", active);
     });
@@ -48,10 +64,11 @@
     backends.forEach((backend) => {
       const card = document.createElement("article");
       card.className = "backend-card";
-      const aliveClass = backend.alive ? "alive" : "down";
-      const aliveText = backend.alive ? "HEALTHY" : "UNHEALTHY";
+      const circuitOpen = Boolean(backend.circuit_open);
+      const aliveClass = backend.alive && !circuitOpen ? "alive" : "down";
+      const aliveText = circuitOpen ? "CIRCUIT OPEN" : backend.alive ? "HEALTHY" : "UNHEALTHY";
       card.innerHTML = [
-        "<p><strong>" + escapeHTML(backend.url) + "</strong></p>",
+        "<p><strong>" + escapeHTML(shortBackendName(backend.url)) + "</strong></p>",
         "<p class='" + aliveClass + "'>" + aliveText + "</p>",
         "<p>Weight: <strong>" + Number(backend.weight || 1) + "</strong></p>",
         "<p>Active connections: <strong>" + Number(backend.active_connections || 0) + "</strong></p>",
@@ -71,13 +88,13 @@
       markActiveChip(strategy);
       renderBackends(backendData.backends);
 
-      const healthy = (backendData.backends || []).filter((item) => item.alive).length;
+      const healthy = (backendData.backends || []).filter((item) => item.alive && !item.circuit_open).length;
       const total = (backendData.backends || []).length;
-      setStatus("Healthy backends: " + healthy + " / " + total + " | Last refresh: " + new Date().toLocaleTimeString(), false);
-      await refreshCost();
+      setStatus(statusMessage, "Healthy backends: " + healthy + " / " + total + " | Last refresh: " + new Date().toLocaleTimeString(), false);
+      await Promise.all([refreshCost(), refreshMetricsDashboard()]);
     } catch (error) {
-      setStatus("Unable to fetch control-plane data: " + error.message, true);
-      await refreshCost();
+      setStatus(statusMessage, "Unable to fetch control-plane data: " + error.message, true);
+      await Promise.all([refreshCost(), refreshMetricsDashboard()]);
     }
   }
 
@@ -89,14 +106,88 @@
       const data = await fetchJSON("/admin/cost");
       const estimated = Number(data.estimated_cost_usd || 0);
       const requests = Number(data.http_requests_total || 0);
-      costLabel.textContent = formatUSD(estimated) + " (" + requests + " req)";
+      costLabel.textContent = formatUSD(estimated) + " (" + formatNumber(requests) + " req)";
     } catch (error) {
-      if (String(error.message || "").includes("401")) {
-        costLabel.textContent = "auth required";
-        return;
-      }
-      costLabel.textContent = "unavailable";
+      costLabel.textContent = String(error.message || "").includes("401") ? "auth required" : "unavailable";
     }
+  }
+
+  async function refreshMetricsDashboard() {
+    try {
+      const data = await fetchJSON("/admin/metrics-summary");
+      renderMetricsDashboard(data);
+      setStatus(metricsMessage, "Metrics refreshed at " + new Date().toLocaleTimeString(), false);
+    } catch (error) {
+      setStatus(metricsMessage, "Metrics unavailable: " + error.message, true);
+    }
+  }
+
+  function renderMetricsDashboard(data) {
+    metricElements.requests.textContent = formatNumber(data.requests_total || 0);
+    metricElements.inflight.textContent = formatNumber(data.in_flight_requests || 0);
+    metricElements.retries.textContent = formatNumber(data.retries_total || 0);
+    metricElements.failovers.textContent = formatNumber(data.failovers_total || 0);
+    metricElements.upstreamErrors.textContent = formatNumber(data.upstream_errors_total || 0);
+    metricElements.circuitOpens.textContent = formatNumber(data.circuit_opens_total || 0);
+
+    renderBars(statusBars, Object.entries(data.status_classes || {}).map(([label, count]) => ({
+      label,
+      value: Number(count || 0),
+    })));
+    renderBars(selectionBars, (data.backend_selections || []).map((item) => ({
+      label: shortBackendName(item.backend) + " / " + item.strategy,
+      value: Number(item.count || 0),
+    })));
+    renderLatencyRows(data.latencies || []);
+  }
+
+  function renderBars(container, rows) {
+    if (!container) {
+      return;
+    }
+    const max = rows.reduce((largest, item) => Math.max(largest, item.value), 0);
+    if (rows.length === 0 || max === 0) {
+      container.innerHTML = "<p class='small-copy'>No samples yet.</p>";
+      return;
+    }
+
+    container.innerHTML = "";
+    rows
+      .filter((item) => item.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6)
+      .forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "bar-row";
+        const width = Math.max(6, Math.round((item.value / max) * 100));
+        row.innerHTML = [
+          "<div class='bar-meta'><span>" + escapeHTML(item.label) + "</span><strong>" + formatNumber(item.value) + "</strong></div>",
+          "<div class='bar-track'><span style='width:" + width + "%'></span></div>",
+        ].join("");
+        container.appendChild(row);
+      });
+  }
+
+  function renderLatencyRows(latencies) {
+    if (!latencyTable) {
+      return;
+    }
+    const rows = latencies
+      .slice()
+      .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+      .slice(0, 6);
+    if (rows.length === 0) {
+      latencyTable.innerHTML = "<tr><td colspan='4'>No latency samples yet.</td></tr>";
+      return;
+    }
+    latencyTable.innerHTML = rows.map((item) => [
+      "<tr>",
+      "<td><code>" + escapeHTML(item.route || "unknown") + "</code></td>",
+      "<td>" + escapeHTML(item.method || "GET") + "</td>",
+      "<td>" + formatNumber(item.count || 0) + "</td>",
+      "<td>" + formatLatency(item.average_ms || 0) + "</td>",
+      "</tr>",
+    ].join("")).join("");
   }
 
   async function switchStrategy(strategy) {
@@ -107,9 +198,9 @@
         body: JSON.stringify({ name: strategy }),
       });
       await refreshControlPlane();
-      setStatus("Routing strategy switched to " + strategy, false);
+      setStatus(statusMessage, "Routing strategy switched to " + strategy, false);
     } catch (error) {
-      setStatus("Strategy switch failed: " + error.message, true);
+      setStatus(statusMessage, "Strategy switch failed: " + error.message, true);
     }
   }
 
@@ -144,7 +235,7 @@
     }
   }
 
-  chips.forEach((chip) => {
+  strategyChips.forEach((chip) => {
     chip.addEventListener("click", function () {
       const strategy = chip.getAttribute("data-strategy");
       if (strategy) {
@@ -183,13 +274,35 @@
       .replace(/'/g, "&#39;");
   }
 
+  function shortBackendName(value) {
+    try {
+      const parsed = new URL(String(value));
+      return parsed.hostname || String(value);
+    } catch (error) {
+      return String(value || "backend");
+    }
+  }
+
   function formatUSD(value) {
-    if (!Number.isFinite(value)) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
       return "$0.00";
     }
-    if (Math.abs(value) >= 1) {
-      return "$" + value.toFixed(2);
+    if (Math.abs(number) >= 1) {
+      return "$" + number.toFixed(2);
     }
-    return "$" + value.toFixed(6);
+    return "$" + number.toFixed(6);
+  }
+
+  function formatNumber(value) {
+    return Number(value || 0).toLocaleString();
+  }
+
+  function formatLatency(value) {
+    const number = Number(value || 0);
+    if (number >= 1000) {
+      return (number / 1000).toFixed(2) + "s";
+    }
+    return number.toFixed(number >= 10 ? 1 : 2) + "ms";
   }
 })();

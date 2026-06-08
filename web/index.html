@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mini Load Balancer | Distributed Systems Demo</title>
-  <meta name="description" content="A production-style mini load balancer with round-robin, least-connections, weighted routing, consistent hashing, health checks, and failover.">
+  <title>EdgeBalancer | Go Infrastructure Router</title>
+  <meta name="description" content="EdgeBalancer is a production-style Go load balancer with health checks, round-robin routing, least-connections routing, circuit breakers, rate limiting, and a live metrics dashboard.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -13,47 +13,79 @@
 <body>
   <div class="noise"></div>
   <header class="hero">
-    <p class="eyebrow">Distributed Systems Project</p>
-    <h1>Mini Load Balancer</h1>
+    <p class="eyebrow">Go Infrastructure Project</p>
+    <h1>EdgeBalancer</h1>
     <p class="lede">
-      An AWS-deployable traffic router that demonstrates reliability engineering:
-      strategy-based routing, active health probes, and automatic failover.
+      A live traffic router that demonstrates the systems work recruiters look for:
+      health-aware routing, bounded failure handling, protected control planes,
+      and operational metrics running on AWS ECS/Fargate.
     </p>
     <div class="hero-actions">
-      <a class="button primary" href="#live">Live Cluster View</a>
-      <a class="button ghost" href="#how-it-works">How It Works</a>
+      <a class="button primary" href="#live">Open Control Plane</a>
+      <a class="button ghost" href="#metrics-dashboard">View Metrics</a>
+      <a class="button ghost" href="#architecture">Architecture</a>
+    </div>
+    <div class="hero-strip" aria-label="EdgeBalancer feature summary">
+      <span>Health Checks</span>
+      <span>Round Robin</span>
+      <span>Least Connections</span>
+      <span>Circuit Breakers</span>
+      <span>Rate Limiting</span>
+      <span>Metrics Dashboard</span>
     </div>
   </header>
 
   <main>
     <section id="recruiter-snapshot" class="panel reveal">
-      <h2>Why This Project Signals Engineering Depth</h2>
-      <div class="metrics-grid">
+      <div class="panel-title-row">
+        <div>
+          <p class="section-kicker">Portfolio Signal</p>
+          <h2>Infrastructure Depth In One Running System</h2>
+        </div>
+      </div>
+      <div class="capability-grid">
         <article>
-          <h3>Traffic Routing</h3>
-          <p>Implements round robin, least connections, weighted routing, and consistent hashing with runtime strategy switching.</p>
+          <span class="capability-code">HC</span>
+          <h3>Health Checks</h3>
+          <p>Active probes remove failing backends from rotation and restore them only after recovery thresholds are met.</p>
         </article>
         <article>
-          <h3>Reliability</h3>
-          <p>Active health checks remove failing nodes from rotation and restore them after recovery.</p>
+          <span class="capability-code">RR</span>
+          <h3>Round Robin</h3>
+          <p>Fair request distribution across healthy nodes for homogeneous backend pools.</p>
         </article>
         <article>
-          <h3>Operational Clarity</h3>
-          <p>Admin APIs expose backend health and connection load for observability and decision-making.</p>
+          <span class="capability-code">LC</span>
+          <h3>Least Connections</h3>
+          <p>Routes new traffic toward less-busy backends when request durations are uneven.</p>
         </article>
         <article>
-          <h3>Production Controls</h3>
-          <p>Supports JWT/Cognito auth, rate limiting, retries/backoff, trace IDs, panic recovery, and cost awareness.</p>
+          <span class="capability-code">CB</span>
+          <h3>Circuit Breakers</h3>
+          <p>Stops repeatedly failing upstreams from absorbing traffic during an outage window.</p>
+        </article>
+        <article>
+          <span class="capability-code">RL</span>
+          <h3>Rate Limiting</h3>
+          <p>Token-bucket protection reduces overload risk before traffic reaches upstream services.</p>
+        </article>
+        <article>
+          <span class="capability-code">MD</span>
+          <h3>Metrics Dashboard</h3>
+          <p>Live counters expose request volume, retries, failovers, upstream errors, and backend selection.</p>
         </article>
       </div>
     </section>
 
     <section id="live" class="panel reveal">
       <div class="panel-title-row">
-        <h2>Live Control Plane</h2>
+        <div>
+          <p class="section-kicker">Live Control Plane</p>
+          <h2>Routing Strategy And Backend Health</h2>
+        </div>
         <button id="refresh-btn" class="button ghost" type="button">Refresh</button>
       </div>
-      <p class="small-copy">Reads from <code>/admin/backends</code> and <code>/admin/strategy</code>.</p>
+      <p class="small-copy">Reads from <code>/admin/backends</code>, <code>/admin/strategy</code>, and <code>/admin/cost</code>.</p>
 
       <div class="strategy-switch">
         <button class="chip" data-strategy="round_robin" type="button">Round Robin</button>
@@ -62,71 +94,147 @@
         <button class="chip" data-strategy="consistent_hash" type="button">Consistent Hashing</button>
       </div>
 
-      <div class="status-line">
-        <span>Current Strategy:</span>
-        <strong id="strategy-label">Loading...</strong>
-      </div>
-      <div class="status-line">
-        <span>Proxy Endpoint:</span>
-        <code id="proxy-label">/proxy/</code>
-      </div>
-      <div class="status-line">
-        <span>Estimated Cost:</span>
-        <code id="cost-label">loading...</code>
+      <div class="control-grid">
+        <div class="status-line">
+          <span>Current Strategy</span>
+          <strong id="strategy-label">Loading...</strong>
+        </div>
+        <div class="status-line">
+          <span>Proxy Endpoint</span>
+          <code id="proxy-label">/proxy/</code>
+        </div>
+        <div class="status-line">
+          <span>Estimated Cost</span>
+          <code id="cost-label">loading...</code>
+        </div>
       </div>
       <div id="backend-grid" class="backend-grid"></div>
       <p id="status-message" class="small-copy"></p>
     </section>
 
-    <section id="how-it-works" class="panel reveal">
-      <h2>How Request Routing Works</h2>
+    <section id="metrics-dashboard" class="panel reveal">
+      <div class="panel-title-row">
+        <div>
+          <p class="section-kicker">Metrics Dashboard</p>
+          <h2>Reliability And Traffic Counters</h2>
+        </div>
+      </div>
+      <div class="metric-grid">
+        <article>
+          <span>Total Requests</span>
+          <strong id="metric-requests">0</strong>
+        </article>
+        <article>
+          <span>In Flight</span>
+          <strong id="metric-inflight">0</strong>
+        </article>
+        <article>
+          <span>Retries</span>
+          <strong id="metric-retries">0</strong>
+        </article>
+        <article>
+          <span>Failovers</span>
+          <strong id="metric-failovers">0</strong>
+        </article>
+        <article>
+          <span>Upstream Errors</span>
+          <strong id="metric-upstream-errors">0</strong>
+        </article>
+        <article>
+          <span>Circuit Opens</span>
+          <strong id="metric-circuit-opens">0</strong>
+        </article>
+      </div>
+      <div class="dashboard-split">
+        <article>
+          <h3>Status Classes</h3>
+          <div id="status-bars" class="bar-list"></div>
+        </article>
+        <article>
+          <h3>Backend Selection</h3>
+          <div id="selection-bars" class="bar-list"></div>
+        </article>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Route</th>
+              <th>Method</th>
+              <th>Samples</th>
+              <th>Avg Latency</th>
+            </tr>
+          </thead>
+          <tbody id="latency-table">
+            <tr><td colspan="4">Loading metrics...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="metrics-message" class="small-copy"></p>
+    </section>
+
+    <section id="architecture" class="panel reveal">
+      <div class="panel-title-row">
+        <div>
+          <p class="section-kicker">Request Path</p>
+          <h2>How EdgeBalancer Handles Traffic</h2>
+        </div>
+      </div>
       <ol class="flow">
-        <li>Client request reaches <code>/proxy/*</code>.</li>
-        <li>Balancer chooses backend using active strategy.</li>
-        <li>Health checks keep unhealthy backends out of rotation.</li>
-        <li>Proxy forwards request and updates connection counters.</li>
-        <li>Failures trigger automatic rerouting to healthy nodes.</li>
+        <li>Client request reaches <code>/proxy/*</code> through CloudFront, ALB, and ECS/Fargate.</li>
+        <li>Rate limiting and request tracing run before proxy forwarding.</li>
+        <li>EdgeBalancer chooses a healthy backend with the active strategy.</li>
+        <li>Retries and circuit breakers isolate upstream failures from client traffic.</li>
+        <li>Metrics and structured logs record request, backend, latency, and failover behavior.</li>
       </ol>
     </section>
 
     <section id="routing-tradeoffs" class="panel reveal">
-      <h2>Routing Trade-offs</h2>
-      <div class="metrics-grid">
+      <div class="panel-title-row">
+        <div>
+          <p class="section-kicker">Routing Algorithms</p>
+          <h2>Strategy Trade-offs</h2>
+        </div>
+      </div>
+      <div class="capability-grid compact">
         <article>
           <h3>Round Robin</h3>
-          <p>Simple and fair when all nodes are similar in capacity and latency profile.</p>
+          <p>Best when backend capacity and response time are similar.</p>
         </article>
         <article>
           <h3>Least Connections</h3>
-          <p>Adapts to uneven request duration by sending new traffic to less-busy nodes.</p>
+          <p>Best when some requests hold connections longer than others.</p>
         </article>
         <article>
           <h3>Weighted Routing</h3>
-          <p>Distributes traffic by node capacity so stronger backends handle a larger share.</p>
+          <p>Best when stronger nodes should carry a larger traffic share.</p>
         </article>
         <article>
           <h3>Consistent Hashing</h3>
-          <p>Best for affinity and cache locality because key-to-node mapping stays stable.</p>
+          <p>Best when cache locality or request affinity matters.</p>
         </article>
       </div>
-      <p class="small-copy">Health checks and failover apply across all strategies to keep unhealthy nodes out of rotation.</p>
     </section>
 
     <section id="ai-copilot" class="panel reveal">
-      <h2>AI Copilot</h2>
-      <p class="small-copy">Ask architecture, reliability, or optimization questions based on live cluster state.</p>
+      <div class="panel-title-row">
+        <div>
+          <p class="section-kicker">AI Copilot</p>
+          <h2>Runtime-Aware Architecture Guidance</h2>
+        </div>
+      </div>
       <div class="status-line">
-        <span>AI Provider:</span>
+        <span>AI Provider</span>
         <code id="ai-provider-label">loading...</code>
       </div>
       <div class="ai-actions">
-        <button class="chip ai-prompt" data-prompt="What routing strategy should I use right now?" type="button">Strategy Advice</button>
-        <button class="chip ai-prompt" data-prompt="How do I improve reliability for this load balancer?" type="button">Reliability Plan</button>
-        <button class="chip ai-prompt" data-prompt="Give me a recruiter-ready explanation of this system." type="button">Recruiter Pitch</button>
+        <button class="chip ai-prompt" data-prompt="What routing strategy should EdgeBalancer use right now?" type="button">Strategy Advice</button>
+        <button class="chip ai-prompt" data-prompt="How should I improve EdgeBalancer reliability?" type="button">Reliability Plan</button>
+        <button class="chip ai-prompt" data-prompt="Give me a recruiter-ready explanation of EdgeBalancer." type="button">Recruiter Pitch</button>
       </div>
       <div class="hash-controls">
         <label for="ai-question">Question</label>
-        <textarea id="ai-question" rows="4" placeholder="Ask the AI copilot about strategy, resilience, scaling, or interview narrative."></textarea>
+        <textarea id="ai-question" rows="4" placeholder="Ask about strategy, resilience, scaling, production controls, or interview narrative."></textarea>
         <button id="ai-ask-btn" class="button primary" type="button">Ask AI</button>
       </div>
       <div id="ai-answer" class="hash-result">AI response will appear here.</div>
@@ -134,7 +242,7 @@
   </main>
 
   <footer class="footer">
-    <p>Built in Go. Ready for containerized AWS deployment.</p>
+    <p>EdgeBalancer runs in Go on AWS ECS/Fargate with CloudFront, ALB, Route 53, CloudWatch, and ECR.</p>
   </footer>
 
   <script src="/config.js"></script>

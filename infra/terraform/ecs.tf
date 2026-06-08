@@ -36,10 +36,13 @@ resource "aws_ecs_task_definition" "load_balancer" {
 
   container_definitions = jsonencode([
     {
-      name      = "app"
-      image     = var.load_balancer_image
-      essential = true
-      cpu       = 0
+      name           = "app"
+      image          = var.load_balancer_image
+      essential      = true
+      cpu            = 0
+      mountPoints    = []
+      systemControls = []
+      volumesFrom    = []
       portMappings = [
         {
           containerPort = var.container_port
@@ -77,10 +80,13 @@ resource "aws_ecs_task_definition" "backend_a" {
 
   container_definitions = jsonencode([
     {
-      name      = "app"
-      image     = var.backend_image
-      essential = true
-      cpu       = 0
+      name           = "app"
+      image          = var.backend_image
+      essential      = true
+      cpu            = 0
+      mountPoints    = []
+      systemControls = []
+      volumesFrom    = []
       portMappings = [
         {
           containerPort = var.container_port
@@ -118,10 +124,13 @@ resource "aws_ecs_task_definition" "backend_b" {
 
   container_definitions = jsonencode([
     {
-      name      = "app"
-      image     = var.backend_image
-      essential = true
-      cpu       = 0
+      name           = "app"
+      image          = var.backend_image
+      essential      = true
+      cpu            = 0
+      mountPoints    = []
+      systemControls = []
+      volumesFrom    = []
       portMappings = [
         {
           containerPort = var.container_port

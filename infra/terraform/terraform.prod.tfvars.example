@@ -3,6 +3,8 @@ project_name = "mini-load-balancer"
 
 domain_name       = "miniloadbalancer.io"
 route53_zone_name = "miniloadbalancer.io"
+frontend_hosting_provider = "vercel"
+load_balancer_enable_frontend = false
 
 vpc_id = "vpc-01b8820eda6e42933"
 public_subnet_ids = [

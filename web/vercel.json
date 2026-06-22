@@ -1,0 +1,41 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frontend-Host",
+          "value": "vercel"
+        },
+        {
+          "key": "X-Backend-Origin",
+          "value": "aws-cloudfront-ecs"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/admin/:path*",
+      "destination": "https://d1a0ru1gilc8jr.cloudfront.net/admin/:path*"
+    },
+    {
+      "source": "/ai/:path*",
+      "destination": "https://d1a0ru1gilc8jr.cloudfront.net/ai/:path*"
+    },
+    {
+      "source": "/proxy/:path*",
+      "destination": "https://d1a0ru1gilc8jr.cloudfront.net/proxy/:path*"
+    },
+    {
+      "source": "/metrics",
+      "destination": "https://d1a0ru1gilc8jr.cloudfront.net/metrics"
+    },
+    {
+      "source": "/healthz",
+      "destination": "https://d1a0ru1gilc8jr.cloudfront.net/healthz"
+    }
+  ]
+}

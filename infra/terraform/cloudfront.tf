@@ -41,7 +41,7 @@ resource "aws_cloudfront_distribution" "frontdoor" {
   is_ipv6_enabled = true
   comment         = local.cloudfront_comment
   price_class     = var.cloudfront_price_class
-  aliases         = [var.domain_name]
+  aliases         = local.cloudfront_custom_domain ? [var.domain_name] : []
 
   origin {
     domain_name = aws_lb.this.dns_name
@@ -74,9 +74,10 @@ resource "aws_cloudfront_distribution" "frontdoor" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = local.certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = !local.cloudfront_custom_domain
+    acm_certificate_arn            = local.cloudfront_custom_domain ? local.certificate_arn : null
+    ssl_support_method             = local.cloudfront_custom_domain ? "sni-only" : null
+    minimum_protocol_version       = local.cloudfront_custom_domain ? "TLSv1.2_2021" : null
   }
 
   depends_on = [aws_acm_certificate_validation.site]
@@ -88,15 +89,23 @@ resource "aws_route53_record" "frontdoor_a" {
   zone_id = data.aws_route53_zone.public.zone_id
   name    = var.domain_name
   type    = "A"
+  ttl     = local.cloudfront_custom_domain ? null : 300
+  records = local.cloudfront_custom_domain ? null : [var.vercel_apex_a_record]
 
-  alias {
-    name                   = aws_cloudfront_distribution.frontdoor.domain_name
-    zone_id                = aws_cloudfront_distribution.frontdoor.hosted_zone_id
-    evaluate_target_health = false
+  dynamic "alias" {
+    for_each = local.cloudfront_custom_domain ? [1] : []
+
+    content {
+      name                   = aws_cloudfront_distribution.frontdoor.domain_name
+      zone_id                = aws_cloudfront_distribution.frontdoor.hosted_zone_id
+      evaluate_target_health = false
+    }
   }
 }
 
 resource "aws_route53_record" "frontdoor_aaaa" {
+  count = local.cloudfront_custom_domain ? 1 : 0
+
   zone_id = data.aws_route53_zone.public.zone_id
   name    = var.domain_name
   type    = "AAAA"

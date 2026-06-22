@@ -13,6 +13,7 @@ locals {
   execution_role_name         = coalesce(var.execution_role_name, "${var.project_name}-ecs-task-execution-role")
   execution_role_arn          = var.existing_execution_role_arn != null ? var.existing_execution_role_arn : aws_iam_role.ecs_task_execution[0].arn
   certificate_arn             = var.existing_acm_certificate_arn != null ? var.existing_acm_certificate_arn : aws_acm_certificate.site[0].arn
+  cloudfront_custom_domain    = var.frontend_hosting_provider == "cloudfront"
   cloudfront_comment          = "${var.project_name}-ecs-frontdoor"
   sns_topic_name              = "${var.project_name}-alerts"
   dashboard_name              = "${var.project_name}-ecs-ops"
@@ -34,7 +35,7 @@ locals {
   load_balancer_environment = [
     { name = "STRATEGY", value = var.load_balancer_strategy },
     { name = "PROXY_PREFIX", value = var.proxy_prefix },
-    { name = "ENABLE_FRONTEND", value = "true" },
+    { name = "ENABLE_FRONTEND", value = tostring(var.load_balancer_enable_frontend) },
     { name = "MODE", value = "load_balancer" },
     { name = "BACKENDS", value = local.load_balancer_backends },
     { name = "HEALTH_PATH", value = var.load_balancer_health_path_env },

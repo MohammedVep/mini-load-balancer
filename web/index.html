@@ -181,8 +181,9 @@
         </div>
       </div>
       <ol class="flow">
-        <li>Client request reaches <code>/proxy/*</code> through CloudFront, ALB, and ECS/Fargate.</li>
-        <li>Rate limiting and request tracing run before proxy forwarding.</li>
+        <li>Vercel serves the static frontend from the edge for the recruiter-facing dashboard.</li>
+        <li>API paths such as <code>/admin/*</code>, <code>/ai/*</code>, <code>/metrics</code>, and <code>/proxy/*</code> are rewritten to the AWS CloudFront, ALB, and ECS/Fargate backend.</li>
+        <li>Rate limiting and request tracing run inside the Go load balancer before proxy forwarding.</li>
         <li>EdgeBalancer chooses a healthy backend with the active strategy.</li>
         <li>Retries and circuit breakers isolate upstream failures from client traffic.</li>
         <li>Metrics and structured logs record request, backend, latency, and failover behavior.</li>

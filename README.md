@@ -8,7 +8,7 @@ Production-style Go infrastructure project that demonstrates core distributed-sy
 - Recruiter-facing EdgeBalancer frontend with a live control plane and metrics dashboard
 - Operational visibility through `/admin/*`, structured logs, and Prometheus-style `/metrics`
 - AI copilot endpoint for runtime-aware routing and reliability guidance
-- Current production stack: Route 53 -> CloudFront -> ALB -> ECS/Fargate -> ECS backends
+- Current production stack: Vercel frontend -> AWS CloudFront -> ALB -> ECS/Fargate -> ECS backends
 
 ## Live Production Stack
 
@@ -16,6 +16,13 @@ Current public entrypoints:
 
 - [https://miniloadbalancer.io](https://miniloadbalancer.io)
 - [https://d1a0ru1gilc8jr.cloudfront.net](https://d1a0ru1gilc8jr.cloudfront.net)
+
+Current frontend/backend split:
+
+- Vercel serves the static EdgeBalancer UI from `web/`
+- Vercel rewrites backend paths to `https://d1a0ru1gilc8jr.cloudfront.net`
+- AWS continues to run the Go load balancer, control-plane endpoints, metrics, AI endpoint, and ECS backend services
+- Route 53 keeps DNS ownership for `miniloadbalancer.io`
 
 Current AWS layout:
 
@@ -110,7 +117,26 @@ You can configure runtime via environment variables:
 
 ## Infrastructure as Code
 
-A first-pass Terraform stack for the live AWS architecture is available under `infra/terraform`. It covers ECS/Fargate, the ALB, CloudFront, Route 53/ACM, CloudWatch/SNS, and ECR lifecycle policy.
+A first-pass Terraform stack for the live AWS backend architecture is available under `infra/terraform`. It covers ECS/Fargate, the ALB, CloudFront, Route 53/ACM, CloudWatch/SNS, and ECR lifecycle policy.
+
+## Vercel Frontend
+
+The static frontend is deployed from `web/` to Vercel. `web/vercel.json` keeps the frontend static while proxying API paths to the AWS CloudFront backend:
+
+- `/admin/*` -> AWS control-plane APIs
+- `/ai/*` -> AWS AI copilot API
+- `/proxy/*` -> AWS load-balancer data plane
+- `/metrics` -> AWS Prometheus metrics
+- `/healthz` -> AWS health check
+
+Deploy manually:
+
+```bash
+cd web
+npx --yes vercel@latest pull --yes --environment=production
+npx --yes vercel@latest build --prod
+npx --yes vercel@latest deploy --prebuilt --prod
+```
 
 ## Current AWS Operations
 
@@ -172,10 +198,11 @@ Historical App Runner deployment and migration utilities are retained for refere
 ```mermaid
 flowchart LR
     U["Users"] --> R53["Route 53"]
-    R53 --> CF["CloudFront"]
+    R53 --> V["Vercel Frontend"]
+    V --> CF["AWS CloudFront Backend Origin"]
     CF --> ALB["ALB"]
     ALB --> LB["ECS Fargate (ARM64): EdgeBalancer"]
-    LB --> FE["Frontend (/), Admin (/admin/*), Metrics Summary"]
+    LB --> CP["Control Plane (/admin/*), AI (/ai/*), Metrics"]
     LB --> PX["Proxy Plane (/proxy/*)"]
     PX --> B1["ECS Backend A (ARM64)"]
     PX --> B2["ECS Backend B (ARM64)"]

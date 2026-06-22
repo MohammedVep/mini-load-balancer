@@ -114,7 +114,7 @@ import {
 }
 
 import {
-  to = aws_route53_record.frontdoor_aaaa
+  to = aws_route53_record.frontdoor_aaaa[0]
   id = "Z0393609T8LQ897NYPHK_miniloadbalancer.io_AAAA"
 }
 

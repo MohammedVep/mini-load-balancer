@@ -11,8 +11,25 @@ variable "project_name" {
 }
 
 variable "domain_name" {
-  description = "Public DNS name fronted by CloudFront, for example miniloadbalancer.io."
+  description = "Public DNS name for the production frontend, for example miniloadbalancer.io."
   type        = string
+}
+
+variable "frontend_hosting_provider" {
+  description = "Provider serving the public frontend. Use cloudfront for AWS-only hosting or vercel for split Vercel frontend plus AWS backend."
+  type        = string
+  default     = "cloudfront"
+
+  validation {
+    condition     = contains(["cloudfront", "vercel"], var.frontend_hosting_provider)
+    error_message = "frontend_hosting_provider must be cloudfront or vercel."
+  }
+}
+
+variable "vercel_apex_a_record" {
+  description = "A record value for Vercel-hosted apex domains when frontend_hosting_provider is vercel."
+  type        = string
+  default     = "76.76.21.21"
 }
 
 variable "route53_zone_name" {
@@ -121,6 +138,12 @@ variable "load_balancer_strategy" {
   description = "Default routing strategy for the load balancer service."
   type        = string
   default     = "weighted"
+}
+
+variable "load_balancer_enable_frontend" {
+  description = "Whether the AWS load balancer task should serve the static frontend. Disable when Vercel hosts the UI."
+  type        = bool
+  default     = true
 }
 
 variable "proxy_prefix" {
